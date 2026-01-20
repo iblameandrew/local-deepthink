@@ -1545,6 +1545,10 @@
                     chatContainer.focus();
 
                     exportQnnButton.classList.remove('hidden');
+                } else if (result.message === "Graph started.") {
+                    // Brainstorming mode - graph is running, SSE events will stream updates
+                    addLogMessage(`<strong>✅ ${result.message}</strong> Processing via SSE stream...`, { isHTML: true, color: 'lime' });
+                    currentSessionId = result.session_id;
                 } else {
                     addLogMessage(`Error: Unexpected response from server: ${JSON.stringify(result)}`, { color: 'red' });
                     graphArchitectureSection.classList.remove('hidden');
