@@ -35,7 +35,8 @@ def get_input_spanner_chain(llm, prompt_alignment, density):
             Synthesize a realistic, professional career for the agent. This career must be a logical choice for tackling the 'sub_problem' and take into the account the MBTI. The degree of specialization is determined by the 'prompt_alignment' parameter {prompt_alignment}).
         </Step>
         <Step id="2" name="DefineAttributes">
-            - Fill creatively with a zodiac sign the 12 slots of a birth chart on the basis of the 'guiding_words' {{guiding_words}} and the 'mbti_type' {{mbti_type}}..
+            - Fill creatively with 12 descriptive attributes the 12 slots of a personality profile on the basis of the 'guiding_words' {{guiding_words}} and the 'mbti_type' {{mbti_type}}.
+            - Use secular, psychological descriptors (e.g., "Precipitated Action", "Analytical Precision") instead of Zodiac signs.
             - DO NOT DEFINE YOURSELF AN MBTI OR A NAME FOR THE AGENT.
         </Step>
         <Step id="3" name="DefineSkills">
@@ -65,18 +66,18 @@ You are a **[Insert Agent's Career and Persona Here]**, a specialized agent desi
 
 ### Attributes
 
-- Sun: [Select Zodiac Sign]
-- Moon: [Select Zodiac Sign]
-- Mercury: [Select Zodiac Sign]
-- Venus: [Select Zodiac Sign]
-- Mars: [Select Zodiac Sign]
-- Jupiter: [Select Zodiac Sign]
-- Saturn: [Select Zodiac Sign]
-- Uranus: [Select Zodiac Sign]
-- Neptune: [Select Zodiac Sign]
-- Pluto: [Select Zodiac Sign]
-- Ascendant: [Select Zodiac Sign]
-- Midheaven: [Select Zodiac Sign]
+- Core Identity: [Select a Descriptive Attribute]
+- Emotional Processing: [Select a Descriptive Attribute]
+- Communication Style: [Select a Descriptive Attribute]
+- Value System: [Select a Descriptive Attribute]
+- Action & Drive: [Select a Descriptive Attribute]
+- Growth & Optimism: [Select a Descriptive Attribute]
+- Structure & Discipline: [Select a Descriptive Attribute]
+- Innovation & Change: [Select a Descriptive Attribute]
+- Intuition & Imagination: [Select a Descriptive Attribute]
+- Transformation & Power: [Select a Descriptive Attribute]
+- External Persona: [Select a Descriptive Attribute]
+- Professional Ambition: [Select a Descriptive Attribute]
 
 ### Skills
 *   [List the 4-6 final, potentially modified, skills of the agent here.]
@@ -161,7 +162,7 @@ def get_dense_spanner_chain(llm, prompt_alignment, density, learning_rate):
     <Phase name="AgentConception">
         <Description>Define the primary components of the new agent's profile.</Description>
         <Step id="2" name="DefineAttributes">   
-            Fill creatively 12 astrological zodiac signs for the agents personality based on fitness to the 'hard_request' and MBTI type {{{{mbti_type}}}}. The influence of the request on this choice is modulated by the 'prompt_alignment' parameter {prompt_alignment}. 
+            Fill creatively 12 secular personality attributes based on fitness to the 'hard_request' and MBTI type {{{{mbti_type}}}}. Use descriptive psychological terms. The influence of the request on this choice is modulated by the 'prompt_alignment' parameter {prompt_alignment}. 
         </Step>
 
         <Step id="3" name="DefineCareer">
@@ -199,18 +200,18 @@ Your responses must strictly reflect your personality and skillset.
 
 ### Personality Attributes 
 
-- Sun: [Select a Zodiac Sign]
-- Moon: [Select a Zodiac Sign]
-- Mercury: [Select a Zodiac Sign]
-- Venus: [Select a Zodiac Sign]
-- Mars: [Select a Zodiac Sign]
-- Jupiter: [Select a Zodiac Sign]
-- Saturn: [Select a Zodiac Sign]
-- Uranus: [Select a Zodiac Sign]
-- Neptune: [Select a Zodiac Sign]
-- Pluto: [Select a Zodiac Sign]
-- Ascendant: [Select a Zodiac Sign]
-- Midheaven: [Select a Zodiac Sign]
+- Core Identity: [Select a Descriptive Attribute]
+- Emotional Processing: [Select a Descriptive Attribute]
+- Communication Style: [Select a Descriptive Attribute]
+- Value System: [Select a Descriptive Attribute]
+- Action & Drive: [Select a Descriptive Attribute]
+- Growth & Optimism: [Select a Descriptive Attribute]
+- Structure & Discipline: [Select a Descriptive Attribute]
+- Innovation & Change: [Select a Descriptive Attribute]
+- Intuition & Imagination: [Select a Descriptive Attribute]
+- Transformation & Power: [Select a Descriptive Attribute]
+- External Persona: [Select a Descriptive Attribute]
+- Professional Ambition: [Select a Descriptive Attribute]
 
 ### Skills
 *   [List the 4-6 final, potentially modified, skills of the agent here.]

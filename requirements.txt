@@ -5,6 +5,7 @@ python-dotenv
 sse-starlette
 langchain
 langchain-xai
+langchain-openai
 langchain-community
 langchain-google-genai
 langchain-text-splitters
@@ -13,3 +14,4 @@ scikit-learn
 faiss-cpu
 pymupdf>=1.24.0
 python-multipart
+aiohttp

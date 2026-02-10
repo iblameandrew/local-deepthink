@@ -35,6 +35,8 @@ from contextlib import redirect_stdout
 from fastapi.staticfiles import StaticFiles
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_xai import ChatXAI
+from langchain_openai import ChatOpenAI
+from deepthink.models import ChatLlamaCpp
 import fitz  # PyMuPDF for PDF text extraction
 from deepthink.chains import (
     get_input_spanner_chain,
@@ -1703,6 +1705,32 @@ async def build_and_run_graph(payload: dict = Body(...)):
             summarizer_llm = llm
             embeddings_model = OllamaEmbeddings(model="mxbai-embed-large:latest")
             await log_stream.put(f"--- Initializing Main Agent LLM: Grok (grok-4.1 fast) ---")
+
+        elif provider == "openrouter":
+            if not api_key:
+                return JSONResponse(content={"message": "OpenRouter API Key required"}, status_code=400)
+            openrouter_model = params.get("openrouter_model", "stepfun/step-3.5-flash:free")
+            llm = ChatOpenAI(
+                model=openrouter_model,
+                openai_api_key=api_key,
+                openai_api_base="https://openrouter.ai/api/v1",
+                temperature=0.7,
+                callbacks=[token_tracker]
+            )
+            summarizer_llm = llm
+            embeddings_model = OllamaEmbeddings(model="mxbai-embed-large:latest")
+            await log_stream.put(f"--- Initializing Main Agent LLM: OpenRouter ({openrouter_model}) ---")
+
+        elif provider == "llamacpp":
+            llamacpp_url = params.get("llamacpp_url", "http://localhost:8080/v1/chat/completions")
+            llm = ChatLlamaCpp(
+                server_url=llamacpp_url,
+                temperature=0.7,
+                max_tokens=4096,
+            )
+            summarizer_llm = llm
+            embeddings_model = OllamaEmbeddings(model="mxbai-embed-large:latest")
+            await log_stream.put(f"--- Initializing Main Agent LLM: LlamaCpp Server ({llamacpp_url}) ---")
 
         else:
             # Default Ollama

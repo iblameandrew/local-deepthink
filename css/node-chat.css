@@ -1,0 +1,836 @@
+/* ============================================================
+   NodeChat & Flux Components — Vanilla HTML5 Reimplementation
+   ============================================================ */
+
+/* --- Custom Scrollbar --- */
+.nc-custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
+}
+
+.nc-custom-scrollbar::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.nc-custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 10px;
+}
+
+.nc-custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* --- Animations --- */
+@keyframes nc-reveal {
+  0% {
+    transform: translateY(30px);
+    opacity: 0;
+  }
+
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.nc-animate-reveal {
+  animation: nc-reveal 1s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes nc-expand-living {
+  0% {
+    transform: scale(0.98);
+    opacity: 0;
+  }
+
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.nc-animate-expand-living {
+  animation: nc-expand-living 0.8s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+@keyframes nc-sparkle-rotate {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.nc-animate-sparkle-rotate {
+  animation: nc-sparkle-rotate 10s linear infinite;
+}
+
+@keyframes nc-float-points {
+
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+    opacity: 0.15;
+  }
+
+  50% {
+    transform: translateY(-6px) scale(1.1);
+    opacity: 0.5;
+  }
+}
+
+.nc-animate-float-1 {
+  animation: nc-float-points 2s ease-in-out infinite;
+}
+
+.nc-animate-float-2 {
+  animation: nc-float-points 2s ease-in-out infinite 0.4s;
+}
+
+.nc-animate-float-3 {
+  animation: nc-float-points 2s ease-in-out infinite 0.8s;
+}
+
+@keyframes nc-super-reveal {
+  0% {
+    opacity: 0;
+    transform: translateY(12px) scale(0.99);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.nc-animate-super-reveal {
+  animation: nc-super-reveal 1.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  will-change: transform, opacity, filter;
+}
+
+@keyframes nc-thinking-dots {
+
+  0%,
+  80%,
+  100% {
+    opacity: 0.3;
+    transform: scale(0.8);
+  }
+
+  40% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* --- Glass Utilities --- */
+.nc-glass-card {
+  background: rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.4);
+  border-radius: 2.5rem;
+  transition: all 0.7s;
+}
+
+.nc-glass-card:hover {
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+/* ============================================================
+   FluxEye — the animated iris spinner
+   ============================================================ */
+.flux-eye {
+  position: relative;
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+  flex-shrink: 0;
+}
+
+/* outer bezel */
+.flux-eye__bezel {
+  position: absolute;
+  inset: 0;
+  background: #0a0a0a;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 1s;
+  box-shadow: 0 0 20px rgba(0, 0, 0, 0.8);
+}
+
+.flux-eye.is-active .flux-eye__bezel {
+  box-shadow: 0 0 80px rgba(255, 255, 255, 0.05);
+}
+
+/* inner conic texture on bezel */
+.flux-eye__bezel-inner {
+  position: absolute;
+  inset: 3%;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: conic-gradient(from 0deg, #1a1a1a, #000, #1a1a1a);
+}
+
+/* rainbow ring */
+.flux-eye__ring {
+  position: absolute;
+  inset: 10%;
+  border-radius: 50%;
+  animation: nc-sparkle-rotate 1.5s linear infinite;
+  mix-blend-mode: screen;
+  background: conic-gradient(from 0deg, #8b5cf6, #06b6d4, #3b82f6, #8b5cf6, #d946ef, #ec4899, #8b5cf6);
+  transition: all 2s cubic-bezier(0.4, 0, 0.2, 1);
+  filter: blur(4px);
+  opacity: 0.8;
+}
+
+.flux-eye.is-animate .flux-eye__ring {
+  animation-duration: 0.8s;
+  opacity: 1;
+  box-shadow: 0 0 40px rgba(255, 255, 255, 0.1);
+}
+
+.flux-eye.is-thinking .flux-eye__ring {
+  animation-duration: 0.4s;
+  opacity: 1;
+  box-shadow: 0 0 40px rgba(255, 255, 255, 0.1);
+}
+
+.flux-eye.is-pulsar .flux-eye__ring {
+  animation-duration: 0.5s;
+  opacity: 1;
+  filter: brightness(1.5) blur(2px);
+  box-shadow: 0 0 40px rgba(255, 255, 255, 0.1);
+}
+
+/* iris body */
+.flux-eye__iris {
+  position: absolute;
+  inset: 24%;
+  background: #050505;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: inset 0 4px 20px rgba(0, 0, 0, 0.9);
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* pupil disc */
+.flux-eye__pupil {
+  width: 60%;
+  height: 60%;
+  border-radius: 50%;
+  background: #000;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.02);
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.6);
+  transition: all 1s;
+}
+
+.flux-eye.is-pulsar .flux-eye__pupil {
+  filter: brightness(1.5);
+  transform: scale(1.05);
+  box-shadow: 0 0 30px rgba(239, 68, 68, 0.3);
+}
+
+/* pupil center dot */
+.flux-eye__dot {
+  width: 12%;
+  height: 12%;
+  background: #000;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  box-shadow: none;
+}
+
+/* color overlay inside iris */
+.flux-eye__overlay {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to top right, rgba(59, 130, 246, 0.03), transparent, rgba(236, 72, 153, 0.03));
+  mix-blend-mode: screen;
+  opacity: 0.3;
+}
+
+/* specular highlight */
+.flux-eye__highlight {
+  position: absolute;
+  inset: 15%;
+  border-radius: 50%;
+  background: linear-gradient(to bottom right, rgba(34, 211, 238, 0.05), transparent);
+  pointer-events: none;
+  transition: all 1s;
+}
+
+.flux-eye.is-pulsar .flux-eye__highlight {
+  background: linear-gradient(to bottom right, rgba(34, 211, 238, 0.1), transparent);
+}
+
+/* small variant */
+.flux-eye--sm {
+  width: 40px;
+  height: 40px;
+}
+
+/* extra-small variant — for header & thinking */
+.flux-eye--xs {
+  width: 16px;
+  height: 16px;
+}
+
+/* ============================================================
+   FluxButton
+   ============================================================ */
+.flux-btn {
+  padding: 0.5rem 2rem;
+  border-radius: 9999px;
+  font-family: inherit;
+  font-weight: 600;
+  font-size: 0.875rem;
+  transition: all 0.5s;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  white-space: nowrap;
+  border: none;
+  outline: none;
+}
+
+.flux-btn:active {
+  transform: scale(0.95);
+}
+
+.flux-btn:disabled {
+  opacity: 0.2;
+  cursor: not-allowed;
+}
+
+.flux-btn--primary {
+  background: #fff;
+  color: #000;
+  box-shadow: 0 0 30px rgba(255, 255, 255, 0.2);
+}
+
+.flux-btn--primary:hover:not(:disabled) {
+  background: #f5f5f5;
+  box-shadow: 0 0 50px rgba(255, 255, 255, 0.3);
+}
+
+.flux-btn--secondary {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(12px);
+}
+
+.flux-btn--secondary:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* icon-only round button */
+.flux-btn--icon {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s;
+  cursor: pointer;
+  font-size: 1rem;
+}
+
+.flux-btn--icon:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.8);
+}
+
+/* ============================================================
+   FluxConfirm Modal
+   ============================================================ */
+.flux-confirm-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  animation: nc-reveal 0.3s ease forwards;
+}
+
+.flux-confirm-overlay[hidden] {
+  display: none;
+}
+
+.flux-confirm {
+  width: 100%;
+  max-width: 28rem;
+  background: #0a0a0a;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 2.5rem;
+  padding: 2rem 2.5rem;
+  box-shadow: 0 0 100px rgba(0, 0, 0, 0.8);
+  position: relative;
+  overflow: hidden;
+}
+
+.flux-confirm__glow-top,
+.flux-confirm__glow-bottom {
+  position: absolute;
+  width: 12rem;
+  height: 12rem;
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: 0.2;
+  pointer-events: none;
+}
+
+.flux-confirm__glow-top {
+  top: -6rem;
+  right: -6rem;
+}
+
+.flux-confirm__glow-bottom {
+  bottom: -6rem;
+  left: -6rem;
+}
+
+.flux-confirm--danger .flux-confirm__glow-top {
+  background: #ef4444;
+}
+
+.flux-confirm--danger .flux-confirm__glow-bottom {
+  background: #f97316;
+}
+
+.flux-confirm--info .flux-confirm__glow-top {
+  background: #a855f7;
+}
+
+.flux-confirm--info .flux-confirm__glow-bottom {
+  background: #3b82f6;
+}
+
+.flux-confirm__body {
+  position: relative;
+  z-index: 10;
+}
+
+.flux-confirm__title {
+  font-size: 1.5rem;
+  color: #fff;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  margin: 0 0 0.5rem;
+}
+
+.flux-confirm__message {
+  font-size: 0.875rem;
+  color: rgba(255, 255, 255, 0.5);
+  line-height: 1.6;
+  font-weight: 300;
+  margin: 0;
+}
+
+.flux-confirm__actions {
+  display: flex;
+  gap: 1rem;
+  margin-top: 1.5rem;
+}
+
+.flux-confirm__actions .flux-btn {
+  flex: 1;
+  padding-top: 0.75rem;
+  padding-bottom: 0.75rem;
+}
+
+/* ============================================================
+   NodeChat — Main Chat Interface
+   ============================================================ */
+.node-chat {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: #050505;
+  border-radius: 2rem;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+/* --- Header --- */
+.node-chat__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(10, 10, 10, 0.9);
+  backdrop-filter: blur(12px);
+  flex-shrink: 0;
+}
+
+.node-chat__header-left {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.node-chat__title {
+  color: #fff;
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+.node-chat__subtitle {
+  color: rgba(255, 255, 255, 0.35);
+  font-size: 0.75rem;
+  margin: 0;
+}
+
+.node-chat__header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* --- Messages Area --- */
+.node-chat__messages {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  position: relative;
+}
+
+/* Corner gradient glows */
+.node-chat__messages::before,
+.node-chat__messages::after {
+  content: '';
+  position: absolute;
+  width: 220px;
+  height: 220px;
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.12;
+  filter: blur(80px);
+}
+
+.node-chat__messages::before {
+  top: -60px;
+  left: -60px;
+  background: #3b82f6;
+  /* blue */
+}
+
+.node-chat__messages::after {
+  bottom: -60px;
+  right: -60px;
+  background: #ef4444;
+  /* red */
+}
+
+/* --- Empty state --- */
+.node-chat__empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  color: rgba(255, 255, 255, 0.18);
+  text-align: center;
+  padding: 2rem;
+  position: relative;
+  z-index: 1;
+}
+
+.node-chat__empty p {
+  margin: 0;
+  font-size: 0.85rem;
+  font-style: italic;
+}
+
+/* --- Message bubbles (above glow layer) --- */
+.nc-msg {
+  position: relative;
+  z-index: 1;
+  max-width: 80%;
+  padding: 0.875rem 1.25rem;
+  border-radius: 1.25rem;
+  line-height: 1.6;
+  word-wrap: break-word;
+  animation: nc-super-reveal 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.nc-msg--user {
+  align-self: flex-end;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.06));
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom-right-radius: 0.25rem;
+}
+
+.nc-msg--ai {
+  align-self: flex-start;
+  background: rgba(255, 255, 255, 0.03);
+  color: rgba(255, 255, 255, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom-left-radius: 0.25rem;
+}
+
+/* markdown content inside ai messages */
+.nc-msg--ai h1,
+.nc-msg--ai h2,
+.nc-msg--ai h3,
+.nc-msg--ai h4,
+.nc-msg--ai h5,
+.nc-msg--ai h6 {
+  color: #fff;
+  margin: 0.75rem 0 0.25rem;
+}
+
+.nc-msg--ai h1 {
+  font-size: 1.25rem;
+}
+
+.nc-msg--ai h2 {
+  font-size: 1.1rem;
+}
+
+.nc-msg--ai h3 {
+  font-size: 1rem;
+}
+
+.nc-msg--ai p {
+  margin: 0.4rem 0;
+}
+
+.nc-msg--ai code {
+  background: rgba(255, 255, 255, 0.08);
+  padding: 0.15em 0.4em;
+  border-radius: 4px;
+  font-family: 'Menlo', 'Consolas', 'Courier New', monospace;
+  font-size: 0.85em;
+}
+
+.nc-msg--ai pre {
+  background: rgba(0, 0, 0, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 0.75rem;
+  padding: 1rem;
+  overflow-x: auto;
+  margin: 0.5rem 0;
+}
+
+.nc-msg--ai pre code {
+  background: none;
+  padding: 0;
+}
+
+.nc-msg--ai ul,
+.nc-msg--ai ol {
+  padding-left: 1.25rem;
+  margin: 0.4rem 0;
+}
+
+.nc-msg--ai li {
+  margin: 0.2rem 0;
+}
+
+.nc-msg--ai blockquote {
+  border-left: 3px solid rgba(139, 92, 246, 0.5);
+  padding-left: 0.75rem;
+  margin: 0.5rem 0;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.nc-msg--ai a {
+  color: #60a5fa;
+  text-decoration: underline;
+}
+
+.nc-msg--ai table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 0.5rem 0;
+}
+
+.nc-msg--ai th,
+.nc-msg--ai td {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 0.4rem 0.6rem;
+  text-align: left;
+}
+
+.nc-msg--ai th {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* --- Thinking indicator --- */
+.nc-thinking {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  align-self: flex-start;
+  padding: 0.75rem 1.25rem;
+  border-radius: 1.25rem;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom-left-radius: 0.25rem;
+  animation: nc-expand-living 0.4s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.nc-thinking__dots {
+  display: flex;
+  gap: 3px;
+}
+
+.nc-thinking__dots span {
+  width: 6px;
+  height: 6px;
+  background: #8b5cf6;
+  border-radius: 50%;
+  animation: nc-thinking-dots 1.4s ease-in-out infinite;
+}
+
+.nc-thinking__dots span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.nc-thinking__dots span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+/* --- Input Area --- */
+.node-chat__input-area {
+  padding: 1rem 1.5rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(10, 10, 10, 0.9);
+  backdrop-filter: blur(12px);
+  flex-shrink: 0;
+}
+
+.node-chat__input-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.75rem;
+}
+
+.node-chat__textarea {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 1.25rem;
+  padding: 0.75rem 1rem;
+  color: #fff;
+  font-family: inherit;
+  font-size: 0.9rem;
+  resize: none;
+  min-height: 44px;
+  max-height: 160px;
+  outline: none;
+  transition: border-color 0.3s;
+  line-height: 1.5;
+}
+
+.node-chat__textarea:focus {
+  border-color: rgba(139, 92, 246, 0.4);
+}
+
+.node-chat__textarea::placeholder {
+  color: rgba(255, 255, 255, 0.25);
+}
+
+.node-chat__send-btn {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: #fff;
+  color: #000;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.3s;
+  flex-shrink: 0;
+  font-size: 1.1rem;
+}
+
+.node-chat__send-btn:hover:not(:disabled) {
+  box-shadow: 0 0 30px rgba(255, 255, 255, 0.3);
+  transform: scale(1.05);
+}
+
+.node-chat__send-btn:disabled {
+  opacity: 0.2;
+  cursor: not-allowed;
+}
+
+/* ============================================================
+   Responsive
+   ============================================================ */
+@media (max-width: 768px) {
+  .nc-glass-card {
+    backdrop-filter: blur(12px);
+    border-radius: 1.5rem;
+  }
+
+  .node-chat {
+    border-radius: 1.5rem;
+  }
+
+  .node-chat__header {
+    padding: 0.75rem 1rem;
+  }
+
+  .node-chat__messages {
+    padding: 1rem;
+  }
+
+  .node-chat__input-area {
+    padding: 0.75rem 1rem;
+  }
+
+  .nc-msg {
+    max-width: 90%;
+  }
+
+  .flux-btn {
+    padding: 0.5rem 1rem;
+    font-size: 0.75rem;
+  }
+
+  .flux-eye {
+    width: 48px;
+    height: 48px;
+  }
+}

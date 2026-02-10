@@ -9,6 +9,7 @@
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <link rel="stylesheet" href="css/prism-okaidia.min.css">
     <link rel="stylesheet" href="css/prism-toolbar.min.css">
+    <link rel="stylesheet" href="css/node-chat.css">
     <style>
         :root {
             --primary-color: #0E1117;
@@ -603,6 +604,8 @@
                 style="padding: 0.5rem; border-radius: 4px; background: #1a1d24; color: #fff; border: 1px solid #333;">
                 <option value="gemini">Gemini (Cloud)</option>
                 <option value="grok">Grok (xAI)</option>
+                <option value="openrouter">OpenRouter</option>
+                <option value="llamacpp">LlamaCpp Server</option>
                 <option value="ollama">Ollama (Local)</option>
             </select>
 
@@ -614,6 +617,21 @@
             <div id="grok-config" style="display: none; gap: 0.5rem; align-items: center;">
                 <label for="grok-api-key">🌌 API Key:</label>
                 <input type="password" id="grok-api-key" placeholder="Grok API key..." style="min-width: 180px;">
+            </div>
+
+            <div id="openrouter-config" style="display: none; gap: 0.5rem; align-items: center;">
+                <label for="openrouter-api-key">🔗 API Key:</label>
+                <input type="password" id="openrouter-api-key" placeholder="OpenRouter API key..."
+                    style="min-width: 180px;">
+                <label for="openrouter-model">📦 Model:</label>
+                <input type="text" id="openrouter-model" value="stepfun/step-3.5-flash:free" placeholder="model-name"
+                    style="min-width: 200px;">
+            </div>
+
+            <div id="llamacpp-config" style="display: none; gap: 0.5rem; align-items: center;">
+                <label for="llamacpp-url">🔗 Server URL:</label>
+                <input type="text" id="llamacpp-url" value="http://localhost:8080/v1/chat/completions"
+                    placeholder="http://localhost:8080/v1/chat/completions" style="min-width: 320px;">
             </div>
 
             <div id="ollama-config" style="display: none; gap: 0.5rem; align-items: center;">
@@ -638,15 +656,6 @@
     <!-- Brainstorming Mode Container -->
     <div class="container brainstorm-container" id="brainstorm-mode">
         <div class="section">
-            <h2>🧠 Brainstorming Mode</h2>
-            <p>Chat with a panel of AI experts who will reflect on your ideas from different perspectives.</p>
-
-            <div class="brainstorm-chat" id="brainstorm-chat">
-                <div style="color: #666; text-align: center; padding: 2rem;">
-                    Ask a question or share an idea to get started...
-                </div>
-            </div>
-
             <div style="margin-bottom: 10px; display: flex; align-items: center; gap: 15px; flex-wrap: wrap;">
                 <div style="display: flex; align-items: center; gap: 5px;">
                     <label for="brainstorm_epochs" style="color: #aaa; font-size: 0.9rem;">Epochs:</label>
@@ -680,10 +689,8 @@
                 </div>
             </div>
 
-            <form class="brainstorm-input-form" id="brainstorm-form">
-                <textarea id="brainstorm-input" placeholder="What would you like to brainstorm?" required></textarea>
-                <button type="submit" id="brainstorm-send-btn">Send</button>
-            </form>
+            <!-- NodeChat Mount Point -->
+            <div id="node-chat-container" style="height: 550px;"></div>
         </div>
     </div>
 
@@ -871,6 +878,7 @@
         </div>
     </div>
 
+    <script src="js/components/node-chat.js"></script>
     <script>
         const graphParamsForm = document.getElementById('graph-params-form');
         const runButton = document.getElementById('run-button');
@@ -924,6 +932,7 @@
         let brainstormChatHistory = [];  // Array of {role: 'user'|'assistant', content: string}
         let brainstormDocumentContext = '';  // Combined extracted text from PDFs
         let attachedDocuments = [];  // Array of {filename: string, charCount: number}
+        let nodeChatInstance = null;  // NodeChat component instance
 
         // PDF upload elements
         const pdfFileInput = document.getElementById('pdf-file-input');
@@ -1020,12 +1029,13 @@
         const geminiApiKeyInput = document.getElementById('gemini-api-key');
         const saveApiKeyBtn = document.getElementById('save-api-key-btn');
         const apiKeyStatus = document.getElementById('api-key-status');
-        const brainstormChat = document.getElementById('brainstorm-chat');
-        const brainstormForm = document.getElementById('brainstorm-form');
-        const brainstormInput = document.getElementById('brainstorm-input');
+        // NodeChat replaces #brainstorm-chat, #brainstorm-form, and #brainstorm-input
+        // Initialize after DOM references are set up (see below)
         const llmProviderSelect = document.getElementById('llm-provider');
         const geminiConfig = document.getElementById('gemini-config');
         const grokConfig = document.getElementById('grok-config');
+        const openrouterConfig = document.getElementById('openrouter-config');
+        const llamacppConfig = document.getElementById('llamacpp-config');
         const ollamaConfig = document.getElementById('ollama-config');
         const ollamaModelGlobal = document.getElementById('ollama-model-global');
 
@@ -1033,26 +1043,35 @@
         const savedProvider = localStorage.getItem('llm_provider') || 'gemini';
         const savedApiKey = localStorage.getItem('gemini_api_key');
         const savedGrokApiKey = localStorage.getItem('grok_api_key');
+        const savedOpenrouterApiKey = localStorage.getItem('openrouter_api_key');
+        const savedOpenrouterModel = localStorage.getItem('openrouter_model');
+        const savedLlamacppUrl = localStorage.getItem('llamacpp_url');
         const savedOllamaModel = localStorage.getItem('ollama_model');
 
         llmProviderSelect.value = savedProvider;
         if (savedApiKey) geminiApiKeyInput.value = savedApiKey;
         if (savedGrokApiKey) document.getElementById('grok-api-key').value = savedGrokApiKey;
+        if (savedOpenrouterApiKey) document.getElementById('openrouter-api-key').value = savedOpenrouterApiKey;
+        if (savedOpenrouterModel) document.getElementById('openrouter-model').value = savedOpenrouterModel;
+        if (savedLlamacppUrl) document.getElementById('llamacpp-url').value = savedLlamacppUrl;
         if (savedOllamaModel) ollamaModelGlobal.value = savedOllamaModel;
 
         // Show/hide config based on provider
         const updateProviderConfig = () => {
+            geminiConfig.style.display = 'none';
+            grokConfig.style.display = 'none';
+            openrouterConfig.style.display = 'none';
+            llamacppConfig.style.display = 'none';
+            ollamaConfig.style.display = 'none';
             if (llmProviderSelect.value === 'gemini') {
                 geminiConfig.style.display = 'flex';
-                grokConfig.style.display = 'none';
-                ollamaConfig.style.display = 'none';
             } else if (llmProviderSelect.value === 'grok') {
-                geminiConfig.style.display = 'none';
                 grokConfig.style.display = 'flex';
-                ollamaConfig.style.display = 'none';
+            } else if (llmProviderSelect.value === 'openrouter') {
+                openrouterConfig.style.display = 'flex';
+            } else if (llmProviderSelect.value === 'llamacpp') {
+                llamacppConfig.style.display = 'flex';
             } else {
-                geminiConfig.style.display = 'none';
-                grokConfig.style.display = 'none';
                 ollamaConfig.style.display = 'flex';
             }
         };
@@ -1070,11 +1089,17 @@
             const provider = llmProviderSelect.value;
             const apiKey = geminiApiKeyInput.value.trim();
             const grokApiKey = document.getElementById('grok-api-key').value.trim();
+            const openrouterApiKey = document.getElementById('openrouter-api-key').value.trim();
+            const openrouterModel = document.getElementById('openrouter-model').value.trim();
+            const llamacppUrl = document.getElementById('llamacpp-url').value.trim();
             const ollamaModel = ollamaModelGlobal.value.trim();
 
             localStorage.setItem('llm_provider', provider);
             if (apiKey) localStorage.setItem('gemini_api_key', apiKey);
             if (grokApiKey) localStorage.setItem('grok_api_key', grokApiKey);
+            if (openrouterApiKey) localStorage.setItem('openrouter_api_key', openrouterApiKey);
+            if (openrouterModel) localStorage.setItem('openrouter_model', openrouterModel);
+            if (llamacppUrl) localStorage.setItem('llamacpp_url', llamacppUrl);
             if (ollamaModel) localStorage.setItem('ollama_model', ollamaModel);
 
             apiKeyStatus.textContent = '✓ Saved';
@@ -1097,99 +1122,83 @@
             });
         });
 
-        // Brainstorming mode handler
-        const handleBrainstormSubmit = async (e) => {
-            e.preventDefault();
-            const message = brainstormInput.value.trim();
-            const provider = localStorage.getItem('llm_provider') || 'gemini';
-            const apiKey = localStorage.getItem('gemini_api_key');
-            const grokApiKey = localStorage.getItem('grok_api_key');
-            const ollamaModel = localStorage.getItem('ollama_model') || 'dengcao/Qwen3-30B-A3B-Instruct-2507:latest';
+        // Initialize NodeChat component in the brainstorm container
+        nodeChatInstance = NodeChat.init('node-chat-container', {
+            title: 'Brainstorm',
+            subtitle: 'AI-powered expert panel',
+            placeholder: 'What would you like to brainstorm?',
+            onSend: async (message, chat) => {
+                const provider = localStorage.getItem('llm_provider') || 'gemini';
+                const apiKey = localStorage.getItem('gemini_api_key');
+                const grokApiKey = localStorage.getItem('grok_api_key');
+                const openrouterApiKey = localStorage.getItem('openrouter_api_key');
+                const openrouterModel = localStorage.getItem('openrouter_model') || 'stepfun/step-3.5-flash:free';
+                const llamacppUrl = localStorage.getItem('llamacpp_url') || 'http://localhost:8080/v1/chat/completions';
+                const ollamaModel = localStorage.getItem('ollama_model') || 'dengcao/Qwen3-30B-A3B-Instruct-2507:latest';
 
-            if (!message) return;
-            if (provider === 'gemini' && !apiKey) {
-                alert('Please save your Gemini API key in the settings panel first.');
-                return;
-            }
-            if (provider === 'grok' && !grokApiKey) {
-                alert('Please save your Grok API key in the settings panel first.');
-                return;
-            }
+                if (provider === 'gemini' && !apiKey) {
+                    alert('Please save your Gemini API key in the settings panel first.');
+                    chat.finishStreaming();
+                    return;
+                }
+                if (provider === 'grok' && !grokApiKey) {
+                    alert('Please save your Grok API key in the settings panel first.');
+                    chat.finishStreaming();
+                    return;
+                }
+                if (provider === 'openrouter' && !openrouterApiKey) {
+                    alert('Please save your OpenRouter API key in the settings panel first.');
+                    chat.finishStreaming();
+                    return;
+                }
 
-            // Lock UI
-            brainstormInput.disabled = true;
-            document.getElementById('brainstorm-send-btn').disabled = true;
+                // Sync chat history
+                brainstormChatHistory = chat.getChatHistory();
 
-            // Add user message to chat history BEFORE sending
-            brainstormChatHistory.push({
-                role: 'user',
-                content: message
-            });
+                logContainer.innerHTML = '';
+                fullLogContent = '';
 
-            // Clear input and show message
-            brainstormInput.value = '';
-            logContainer.innerHTML = ''; // Start fresh
-            fullLogContent = '';
+                // Hide Graph for Brainstorm
+                graphContainer.parentElement.style.display = 'none';
 
-            // Add to Brainstorm Chat
-            const chatDiv = document.getElementById('brainstorm-chat');
-            // Remove placeholder if exists
-            if (chatDiv.children[0] && chatDiv.children[0].innerText.includes('Ask a question')) {
-                chatDiv.innerHTML = '';
-            }
+                addLogMessage(`<strong>User:</strong> ${message}`, { isHTML: true, color: '#a0a0ff' });
 
-            const userMsgDiv = document.createElement('div');
-            userMsgDiv.style.cssText = "background: #334; padding: 1rem; margin: 0.5rem 0; border-radius: 8px; border-left: 4px solid #a0a0ff;";
-            userMsgDiv.innerHTML = `<strong>User:</strong> ${message}`;
-            chatDiv.appendChild(userMsgDiv);
-            chatDiv.scrollTop = chatDiv.scrollHeight;
+                // Determine the correct API key for the selected provider
+                let selectedApiKey = apiKey;
+                if (provider === 'grok') selectedApiKey = grokApiKey;
+                if (provider === 'openrouter') selectedApiKey = openrouterApiKey;
 
-            // Hide Graph for Brainstorm
-            graphContainer.parentElement.style.display = 'none';
+                const params = {
+                    prompt: message,
+                    provider: provider,
+                    api_key: selectedApiKey,
+                    ollama_model: ollamaModel,
+                    openrouter_model: openrouterModel,
+                    llamacpp_url: llamacppUrl,
+                    vector_word_size: 2,
+                    prompt_alignment: 1.0,
+                    density: 1.0,
+                    learning_rate: 0.1,
+                    num_epochs: document.getElementById('brainstorm_epochs').value || 2,
+                    debug_mode: document.getElementById('brainstorm_debug_mode').checked ? 'true' : 'false'
+                };
 
-            addLogMessage(`<strong>User:</strong> ${message}`, { isHTML: true, color: '#a0a0ff' });
-
-            // Prepare params for build_and_run_graph
-            // We map 'message' to 'prompt'
-            const params = {
-                prompt: message,
-                provider: provider,
-                api_key: provider === 'grok' ? grokApiKey : apiKey, // Send the correct key
-                ollama_model: ollamaModel,
-                // Defaults for Brainstorm mode (backend determines complexities, but we can pass explicit overrides if we had UI for them)
-                // Passing reasonable defaults just in case backend needs them for fallback
-                vector_word_size: 2,
-                prompt_alignment: 1.0,
-                density: 1.0,
-                learning_rate: 0.1,
-                num_epochs: document.getElementById('brainstorm_epochs').value || 2,
-                debug_mode: document.getElementById('brainstorm_debug_mode').checked ? 'true' : 'false'
-            };
-
-            try {
-                // Call runGraph with mode='brainstorm', including chat history and document context
-                // runGraph handles log clearing, SSE connection, etc.
-                await runGraph({
-                    params: params,
-                    mode: 'brainstorm',
-                    chat_history: brainstormChatHistory,
-                    document_context: brainstormDocumentContext
-                }, '/build_and_run_graph', false); // Do not clear logs again
-
-            } catch (error) {
-                addLogMessage(`Error initiating brainstorming: ${error.message}`, { color: 'red' });
-            } finally {
-                brainstormInput.disabled = false;
-                document.getElementById('brainstorm-send-btn').disabled = false;
-                brainstormInput.focus();
-            }
-        };
-
-        brainstormForm.addEventListener('submit', handleBrainstormSubmit);
-        brainstormInput.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                brainstormForm.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
+                try {
+                    await runGraph({
+                        params: params,
+                        mode: 'brainstorm',
+                        chat_history: brainstormChatHistory,
+                        document_context: brainstormDocumentContext
+                    }, '/build_and_run_graph', false);
+                    // Note: finishStreaming will be called by the FINAL_ANSWER SSE handler
+                } catch (error) {
+                    addLogMessage(`Error initiating brainstorming: ${error.message}`, { color: 'red' });
+                    chat.removeThinking();
+                    chat.finishStreaming();
+                }
+            },
+            onClear: () => {
+                brainstormChatHistory = [];
             }
         });
 
@@ -1589,12 +1598,18 @@
             const provider = document.getElementById('llm-provider').value;
             const geminiKey = document.getElementById('gemini-api-key').value.trim();
             const grokKey = document.getElementById('grok-api-key').value.trim();
+            const openrouterKey = document.getElementById('openrouter-api-key').value.trim();
+            const openrouterMdl = document.getElementById('openrouter-model').value.trim();
+            const llamacppServerUrl = document.getElementById('llamacpp-url').value.trim();
             const ollamaGlobal = document.getElementById('ollama-model-global').value.trim();
 
             params.provider = provider;
             if (provider === 'gemini') params.api_key = geminiKey;
             if (provider === 'grok') params.api_key = grokKey;
+            if (provider === 'openrouter') params.api_key = openrouterKey;
             params.ollama_model = ollamaGlobal;
+            params.openrouter_model = openrouterMdl;
+            params.llamacpp_url = llamacppServerUrl;
 
             runGraph({ params }, '/build_and_run_graph');
         });
@@ -1753,53 +1768,24 @@
                         }
                     }
 
-                    const chatDiv = document.getElementById('brainstorm-chat');
-                    if (chatDiv) {
-                        const synthesisMsgDiv = document.createElement('div');
-                        synthesisMsgDiv.style.cssText = "background: #1e3a29; padding: 1rem; margin: 0.5rem 0; border-radius: 8px; border-left: 4px solid #28a745; color: #e0e0e0; box-shadow: 0 2px 4px rgba(0,0,0,0.2); font-family: 'Segoe UI', sans-serif;";
-
+                    // Route FINAL_ANSWER into NodeChat
+                    if (nodeChatInstance) {
                         let displayText = '';
                         if (typeof answer === 'object' && answer !== null) {
-                            // Prefer 'proposed_solution' if available
                             if (answer.proposed_solution) displayText = answer.proposed_solution;
                             else displayText = JSON.stringify(answer, null, 2);
                         } else {
                             displayText = String(answer);
                         }
 
+                        // Prefix with synthesis header
+                        displayText = '🧠 **Synthesis**\n\n' + displayText;
 
-                        // Format formatting
-                        // Use marked.parse for markdown rendering
-                        try {
-                            displayText = marked.parse(displayText);
-                        } catch (e) {
-                            console.error("Error parsing markdown:", e);
-                            // Fallback to basic replacement if marked fails
-                            displayText = displayText.replace(/\n/g, '<br>').replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-                        }
+                        nodeChatInstance.appendAIMessage(displayText);
 
-                        synthesisMsgDiv.innerHTML = `<div style="color: #28a745; font-weight: bold; margin-bottom: 0.5rem;">🧠 Synthesis</div>${displayText}`;
-                        chatDiv.appendChild(synthesisMsgDiv);
-                        chatDiv.scrollTop = chatDiv.scrollHeight;
-
-                        // Add assistant response to chat history for continuity
-                        let rawAnswerText = '';
-                        if (typeof answer === 'object' && answer !== null) {
-                            rawAnswerText = answer.proposed_solution || JSON.stringify(answer);
-                        } else {
-                            rawAnswerText = String(answer);
-                        }
-                        brainstormChatHistory.push({
-                            role: 'assistant',
-                            content: rawAnswerText
-                        });
+                        // Sync chat history back
+                        brainstormChatHistory = nodeChatInstance.getChatHistory();
                     }
-
-                    // Re-enable input
-                    const btn = document.getElementById('brainstorm-send-btn');
-                    const input = document.getElementById('brainstorm-input');
-                    if (btn) { btn.disabled = false; btn.innerText = 'Send'; }
-                    if (input) { input.disabled = false; input.focus(); }
 
                 } catch (e) {
                     console.error("Failed to parse FINAL_ANSWER", e);
