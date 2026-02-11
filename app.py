@@ -2753,21 +2753,27 @@ async def start_distillation(payload: dict = Body(...)):
 
     topics_str = payload.get("topics", "")
     topics_list = [t.strip() for t in topics_str.split(",") if t.strip()]
-    anchor_question = payload.get("anchor_question", "")
-    token_budget = payload.get("token_budget", 1_000_000)
-    debug_mode = payload.get("debug_mode", False)
+    
+    # Handle both single anchor (legacy) and multiple anchors
+    anchors_payload = payload.get("anchors")
+    if not anchors_payload:
+        anchor_question = payload.get("anchor_question", "")
+        token_budget = payload.get("token_budget", 1_000_000)
+        anchors = [{"question": anchor_question, "budget": token_budget}]
+    else:
+        anchors = anchors_payload
 
-    # Read provider settings (same pattern as build_and_run_graph)
+    debug_mode = payload.get("debug_mode", False)
     provider = payload.get("provider", "gemini")
     api_key = payload.get("api_key", "")
 
     await log_stream.put(f"--- ⚗️ DISTILLATION: Initializing (provider: {provider}, debug: {debug_mode}) ---")
 
-    if debug_mode:
-        llm = DistillationMockLLM()
-        await log_stream.put("--- ⚗️ Distillation Debug Mode: using DistillationMockLLM ---")
-    else:
-        try:
+    try:
+        if debug_mode:
+            llm = DistillationMockLLM()
+            await log_stream.put("--- ⚗️ Distillation Debug Mode: using DistillationMockLLM ---")
+        else:
             if provider == "gemini":
                 if not api_key:
                     return JSONResponse(content={"message": "Gemini API Key required"}, status_code=400)
@@ -2795,67 +2801,85 @@ async def start_distillation(payload: dict = Body(...)):
                 await log_stream.put(f"--- Distillation LLM: LlamaCpp ({llamacpp_url}) ---")
             else:
                 return JSONResponse(content={"message": "Invalid provider. Please select gemini, grok, openrouter, or llamacpp."}, status_code=400)
-        except Exception as e:
-            await log_stream.put(f"Distillation LLM Init Error: {e}")
-            return JSONResponse(content={"message": f"Failed to initialize LLM: {e}"}, status_code=500)
+    except Exception as e:
+        await log_stream.put(f"Distillation LLM Init Error: {e}")
+        return JSONResponse(content={"message": f"Failed to initialize LLM: {e}"}, status_code=500)
 
-    active_distillation_graph = DistillationGraph(
-        llm=llm,
-        topics=topics_list,
-        anchor_question=anchor_question,
-        token_budget=token_budget,
-        debug_mode=debug_mode,
-        log_queue=log_stream
-    )
+    asyncio.create_task(run_distillation_loop(llm, topics_list, anchors, debug_mode))
 
-    asyncio.create_task(run_distillation_loop())
-
-    return {"status": "started", "message": "Knowledge Distillation started."}
+    return {"status": "started", "message": f"Knowledge Distillation started with {len(anchors)} anchors."}
 
 
-async def run_distillation_loop():
-    """Background loop that runs epochs until budget exhausted or stopped."""
+async def run_distillation_loop(llm, topics, anchors, debug_mode):
+    """Background loop that runs epochs for each anchor until budgets exhausted."""
     global active_distillation_graph
-    if not active_distillation_graph:
-        return
+    
+    total_qa_pairs = 0
+    all_dataset_paths = []
 
-    while True:
-        try:
-            should_continue = await active_distillation_graph.run_epoch()
+    for i, anchor in enumerate(anchors):
+        question = anchor.get("question")
+        budget = anchor.get("budget", 1_000_000)
+        
+        await log_stream.put(f"--- ⚗️ Starting Distillation for Anchor {i+1}/{len(anchors)}: '{question[:50]}...' (Budget: {budget}) ---")
+        
+        active_distillation_graph = DistillationGraph(
+            llm=llm,
+            topics=topics,
+            anchor_question=question,
+            token_budget=budget,
+            debug_mode=debug_mode,
+            log_queue=log_stream
+        )
 
-            # Broadcast structured update to SSE
-            data = {
-                "type": "distillation_update",
-                "epoch": active_distillation_graph.epochs_run,
-                "topology": [
-                    [a.to_dict() for a in layer]
-                    for layer in active_distillation_graph.layers
-                ],
-                "token_count": active_distillation_graph.total_tokens,
-                "input_tokens": active_distillation_graph.total_input_tokens,
-                "output_tokens": active_distillation_graph.total_output_tokens,
-                "token_budget": active_distillation_graph.token_budget,
-                "qa_pairs_count": len(active_distillation_graph.distilled_data),
-                "dataset_file": active_distillation_graph.dataset_path,
-                "perplexity": active_distillation_graph.last_perplexity,
-            }
-            await log_stream.put(json.dumps(data))
+        while active_distillation_graph.is_running:
+            try:
+                should_continue = await active_distillation_graph.run_epoch()
 
-            if not should_continue:
-                await log_stream.put(json.dumps({
-                    "type": "distillation_complete",
-                    "total_epochs": active_distillation_graph.epochs_run,
-                    "total_tokens": active_distillation_graph.total_tokens,
+                # Broadcast structured update to SSE
+                data = {
+                    "type": "distillation_update",
+                    "anchor_index": i,
+                    "anchor_count": len(anchors),
+                    "anchor_question": question,
+                    "epoch": active_distillation_graph.epochs_run,
+                    "topology": [
+                        [a.to_dict() for a in layer]
+                        for layer in active_distillation_graph.layers
+                    ],
+                    "token_count": active_distillation_graph.total_tokens,
+                    "input_tokens": active_distillation_graph.total_input_tokens,
+                    "output_tokens": active_distillation_graph.total_output_tokens,
+                    "token_budget": active_distillation_graph.token_budget,
                     "qa_pairs_count": len(active_distillation_graph.distilled_data),
+                    "total_qa_pairs_count": total_qa_pairs + len(active_distillation_graph.distilled_data),
                     "dataset_file": active_distillation_graph.dataset_path,
-                }))
-                break
+                    "perplexity": active_distillation_graph.last_perplexity,
+                }
+                await log_stream.put(json.dumps(data))
 
-        except Exception as e:
-            await log_stream.put(f"Distillation Error: {e}")
-            import traceback
-            await log_stream.put(traceback.format_exc())
+                if not should_continue:
+                    total_qa_pairs += len(active_distillation_graph.distilled_data)
+                    all_dataset_paths.append(active_distillation_graph.dataset_path)
+                    await log_stream.put(f"--- ⚗️ Anchor {i+1} Complete. Total QA so far: {total_qa_pairs} ---")
+                    break
+
+            except Exception as e:
+                await log_stream.put(f"Distillation Error for Anchor {i+1}: {e}")
+                import traceback
+                await log_stream.put(traceback.format_exc())
+                break
+        
+        if not active_distillation_graph.is_running:
+            await log_stream.put(f"--- ⚗️ Distillation halted by user. ---")
             break
+
+    await log_stream.put(json.dumps({
+        "type": "distillation_complete",
+        "total_qa_pairs_count": total_qa_pairs,
+        "dataset_files": all_dataset_paths,
+    }))
+    active_distillation_graph = None
 
 
 @app.post("/stop_distillation")

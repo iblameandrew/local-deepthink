@@ -659,12 +659,25 @@
                 <input type="text" id="distil-topics"
                     placeholder="e.g. Artificial Intelligence, Neuroscience, Philosophy" required>
 
-                <label for="distil-anchor">Anchor Question:</label>
-                <textarea id="distil-anchor" placeholder="Enter the grand objective or anchor question..."
-                    style="min-height: 80px;" required></textarea>
+                <div id="anchors-container">
+                    <div class="anchor-item section"
+                        style="background: rgba(255,255,255,0.05); padding: 1rem; margin-bottom: 1rem; border: 1px solid #444;">
+                        <div
+                            style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                            <h4 style="margin: 0; color: #0f0;">⚓ Anchor 1</h4>
+                        </div>
+                        <label>Anchor Question:</label>
+                        <textarea class="distil-anchor" placeholder="Enter the grand objective or anchor question..."
+                            style="min-height: 80px;" required></textarea>
 
-                <label for="distil-budget">Token Budget:</label>
-                <input type="number" id="distil-budget" value="1000000" step="10000">
+                        <label>Token Budget:</label>
+                        <input type="number" class="distil-budget" value="1000000" step="10000">
+                    </div>
+                </div>
+
+                <button type="button" id="add-anchor-btn"
+                    style="background-color: #444; margin-bottom: 1.5rem; width: auto; padding: 0.5rem 1rem;">+ Add
+                    Another Anchor</button>
 
                 <div style="display: flex; align-items: center; gap: 8px; margin: 10px 0;">
                     <input type="checkbox" id="distil-debug-mode">
@@ -1107,13 +1120,59 @@
         });
 
         // --- Distillation Form Logic ---
+        const anchorsContainer = document.getElementById('anchors-container');
+        const addAnchorBtn = document.getElementById('add-anchor-btn');
+
+        if (addAnchorBtn) {
+            addAnchorBtn.addEventListener('click', () => {
+                const anchorCount = anchorsContainer.querySelectorAll('.anchor-item').length + 1;
+                const anchorItem = document.createElement('div');
+                anchorItem.className = 'anchor-item section';
+                anchorItem.style.cssText = 'background: rgba(255,255,255,0.05); padding: 1rem; margin-bottom: 1rem; border: 1px solid #444;';
+                anchorItem.innerHTML = `
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                        <h4 style="margin: 0; color: #0f0;">⚓ Anchor ${anchorCount}</h4>
+                        <button type="button" class="remove-anchor-btn" style="width: auto; padding: 2px 8px; background: #dc3545; margin: 0;">&times;</button>
+                    </div>
+                    <label>Anchor Question:</label>
+                    <textarea class="distil-anchor" placeholder="Enter the grand objective or anchor question..."
+                        style="min-height: 80px;" required></textarea>
+
+                    <label>Token Budget:</label>
+                    <input type="number" class="distil-budget" value="1000000" step="10000">
+                `;
+                anchorsContainer.appendChild(anchorItem);
+
+                anchorItem.querySelector('.remove-anchor-btn').addEventListener('click', () => {
+                    anchorItem.remove();
+                    // Renumber remaining anchors
+                    anchorsContainer.querySelectorAll('.anchor-item').forEach((item, idx) => {
+                        item.querySelector('h4').textContent = `⚓ Anchor ${idx + 1}`;
+                    });
+                });
+            });
+        }
+
         if (distillationForm) {
             distillationForm.addEventListener('submit', async (e) => {
                 e.preventDefault();
                 const topics = document.getElementById('distil-topics').value;
-                const anchor = document.getElementById('distil-anchor').value;
-                const budget = document.getElementById('distil-budget').value;
                 const debugMode = document.getElementById('distil-debug-mode').checked;
+
+                // Collect anchors
+                const anchors = [];
+                anchorsContainer.querySelectorAll('.anchor-item').forEach(item => {
+                    const question = item.querySelector('.distil-anchor').value;
+                    const budget = parseInt(item.querySelector('.distil-budget').value);
+                    if (question) {
+                        anchors.push({ question, budget });
+                    }
+                });
+
+                if (anchors.length === 0) {
+                    alert("Please provide at least one anchor question.");
+                    return;
+                }
 
                 // Read global provider settings
                 const provider = document.getElementById('llm-provider').value;
@@ -1122,7 +1181,6 @@
                 const openrouterKey = document.getElementById('openrouter-api-key').value.trim();
                 const openrouterMdl = document.getElementById('openrouter-model').value.trim();
                 const llamacppServerUrl = document.getElementById('llamacpp-url').value.trim();
-
 
                 let api_key = '';
                 if (provider === 'gemini') api_key = geminiKey;
@@ -1140,7 +1198,7 @@
                 stopBtn.style.display = '';
                 downloadBtn.style.display = 'none';
                 tokenBar.style.display = '';
-                distilConsole.innerHTML = '<div style="color:cyan;">--- Distillation Started (Debug: ' + debugMode + ', Provider: ' + provider + ') ---</div>';
+                distilConsole.innerHTML = `<div style="color:cyan;">--- Distillation Started (${anchors.length} anchors, Debug: ${debugMode}, Provider: ${provider}) ---</div>`;
 
                 try {
                     const resp = await fetch('/start_distillation', {
@@ -1148,12 +1206,10 @@
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
                             topics,
-                            anchor_question: anchor,
-                            token_budget: parseInt(budget),
+                            anchors,
                             debug_mode: debugMode,
                             provider: provider,
                             api_key: api_key,
-
                             openrouter_model: openrouterMdl,
                             llamacpp_url: llamacppServerUrl
                         })
@@ -1168,8 +1224,6 @@
                     console.error(e);
                     alert("Error starting distillation: " + e.message);
                     startBtn.disabled = false;
-                    startBtn.textContent = "Start Distillation";
-                    stopBtn.style.display = 'none';
                     startBtn.textContent = "Start Distillation";
                     stopBtn.style.display = 'none';
                 }
@@ -1950,13 +2004,14 @@
                         if (data.perplexity !== undefined && typeof updatePerplexityChart === 'function') {
                             updatePerplexityChart(data.epoch, data.perplexity);
                         }
-                        appendDistilConsole(`[Epoch ${data.epoch}] Tokens: ${(data.token_count || 0).toLocaleString()} / ${(data.token_budget || 0).toLocaleString()} | QA: ${data.qa_pairs_count || 0}`, '#0ff');
+                        const anchorInfo = data.anchor_index !== undefined ? `[Anchor ${data.anchor_index + 1}/${data.anchor_count}] ` : '';
+                        appendDistilConsole(`${anchorInfo}[Epoch ${data.epoch}] Tokens: ${(data.token_count || 0).toLocaleString()} / ${(data.token_budget || 0).toLocaleString()} | QA: ${data.qa_pairs_count || 0}`, '#0ff');
                     }
                     if (data.type === 'distillation_complete') {
-                        appendDistilConsole(`✓ COMPLETE — Epochs: ${data.total_epochs}, Tokens: ${(data.total_tokens || 0).toLocaleString()}, QA Pairs: ${data.qa_pairs_count}`, '#0f0');
-                        // Reset distillation buttons if they are in scope
-                        const distilStartBtn = document.getElementById('distillation-run-button');
-                        const distilStopBtn = document.getElementById('distillation-stop-button');
+                        appendDistilConsole(`✓ COMPLETE — Total QA Pairs: ${data.total_qa_pairs_count}`, '#0f0');
+                        // Reset distillation buttons
+                        const distilStartBtn = document.getElementById('start-distillation-btn');
+                        const distilStopBtn = document.getElementById('stop-distillation-btn');
                         const distilDownloadBtn = document.getElementById('download-distillation-btn');
                         if (distilStartBtn) {
                             distilStartBtn.disabled = false;
@@ -2082,34 +2137,6 @@
                 addLogMessage(`>>> Session ID: ${currentSessionId}`, { color: 'cyan' });
                 addLogMessage(`<strong>✅ Diagnostic chat is now active.</strong>`, { isHTML: true, color: 'lime' });
                 return;
-            } else if ((rawMessage.includes('"type":') || rawMessage.startsWith('{')) && (rawMessage.includes('distillation_update') || rawMessage.includes('distillation_complete'))) {
-                try {
-                    const jsonStr = rawMessage.substring(rawMessage.indexOf('{')).trim();
-                    const data = JSON.parse(jsonStr);
-                    if (data.type === 'distillation_update') {
-                        renderAsciiTopology(data.topology, data.epoch);
-                        updateDistilMetrics(data);
-                        if (data.perplexity !== undefined && typeof updatePerplexityChart === 'function') {
-                            updatePerplexityChart(data.epoch, data.perplexity);
-                        }
-                        appendDistilConsole(`[Epoch ${data.epoch}] Tokens: ${(data.token_count || 0).toLocaleString()} / ${(data.token_budget || 0).toLocaleString()} | QA: ${data.qa_pairs_count || 0}`, '#0ff');
-                    }
-                    if (data.type === 'distillation_complete') {
-                        appendDistilConsole(`✓ COMPLETE — Epochs: ${data.total_epochs}, Tokens: ${(data.total_tokens || 0).toLocaleString()}, QA Pairs: ${data.qa_pairs_count}`, '#0f0');
-                        // Reset distillation buttons if they are in scope
-                        const distilStartBtn = document.getElementById('distillation-run-button');
-                        const distilStopBtn = document.getElementById('distillation-stop-button');
-                        const distilDownloadBtn = document.getElementById('download-distillation-btn');
-                        if (distilStartBtn) {
-                            distilStartBtn.disabled = false;
-                            distilStartBtn.textContent = "Start Distillation";
-                        }
-                        if (distilStopBtn) distilStopBtn.style.display = 'none';
-                        if (distilDownloadBtn) distilDownloadBtn.style.display = '';
-                    }
-                } catch (e) {
-                    console.error("Error parsing distillation update", e);
-                }
             } else if (rawMessage.startsWith('DISTILLATION_LOG:')) {
                 const msg = rawMessage.replace('DISTILLATION_LOG:', '').trim();
                 if (typeof appendDistilConsole === 'function') {
