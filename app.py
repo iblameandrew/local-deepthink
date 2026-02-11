@@ -32,9 +32,11 @@ from langchain_core.messages import SystemMessage, HumanMessage
 from sklearn.cluster import KMeans
 from contextlib import redirect_stdout
 from fastapi.staticfiles import StaticFiles
-from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
+from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_xai import ChatXAI
-from langchain_openai import ChatOpenAI
+from langchain.embeddings.base import Embeddings
+from xai_sdk import Client as XAIClient
 from deepthink.models import ChatLlamaCpp
 import fitz  # PyMuPDF for PDF text extraction
 from deepthink.chains import (
@@ -136,6 +138,32 @@ async def broadcast_log(message: str):
 
 sessions = {}
 final_reports = {}
+
+# --- Custom Embedding Classes ---
+
+class GrokEmbeddings(Embeddings):
+    def __init__(self, api_key, model="grok-embedding-small"):
+        self.client = XAIClient(api_key=api_key)
+        self.model = model
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        # Batch embedding logic
+        try:
+            response = self.client.embeddings.create(model=self.model, input=texts)
+            return [item.embedding for item in response.data]
+        except Exception as e:
+            print(f"Error generating Grok embeddings: {e}")
+            return []
+
+    def embed_query(self, text: str) -> list[float]:
+        # Single embedding logic
+        try:
+            response = self.client.embeddings.create(model=self.model, input=text)
+            return response.data[0].embedding
+        except Exception as e:
+            print(f"Error generating Grok query embedding: {e}")
+            return []
+
 active_distillation_graph = None 
 
 
@@ -198,6 +226,11 @@ class RAPTOR:
     def _cluster_nodes(self, docs: List[Document], n_clusters=None):
         import numpy as np
         embeddings = self.embeddings_model.embed_documents([d.page_content for d in docs])
+        
+        if not embeddings:
+            print("WARNING: Embeddings generation returned empty. Skipping clustering for this level.")
+            return [list(range(len(docs)))]
+
         X = np.array(embeddings)
         
         # Heuristic for n_clusters if not provided
@@ -208,7 +241,12 @@ class RAPTOR:
              return [list(range(len(docs)))]
 
         kmeans = KMeans(n_clusters= n_clusters, random_state=42)
-        kmeans.fit(X)
+        try:
+            kmeans.fit(X)
+        except ValueError as e:
+            print(f"WARNING: KMeans failed: {e}. Fallback to single cluster.")
+            return [list(range(len(docs)))]
+            
         labels = kmeans.labels_
         
         clustered_indices = []
@@ -899,6 +937,14 @@ def create_agent_node(llm, node_id):
             layer_index_str, agent_index_str = node_id.split('_')[1:]
             layer_index, agent_index = int(layer_index_str), int(agent_index_str)
             agent_prompt = state['all_layers_prompts'][layer_index][agent_index]
+            
+            # Problem 2: Prepend name and specialty to prompt for better agent identity
+            agent_personas = state.get("agent_personas", {})
+            persona = agent_personas.get(node_id, {})
+            if persona:
+                name = persona.get("name", "Expert")
+                specialty = persona.get("specialty", "Specialist")
+                agent_prompt = f"YOU ARE {name.upper()}, A {specialty.upper()}.\n\n{agent_prompt}"
         except (ValueError, IndexError):
             await log_stream.put(f"ERROR: Could not find prompt for {node_id} in state. Halting agent.")
             return {}
@@ -1732,30 +1778,37 @@ async def build_and_run_graph(payload: dict = Body(...)):
         provider = params.get("provider", "gemini")
         api_key = params.get("api_key", "")
         
-        # Custom Debug Mode Logic (Prioritize Mock LLMs)
-        is_debug = params.get("coder_debug_mode") == 'true' or params.get("debug_mode") == 'true' or params.get("coder_debug_mode") is True or params.get("debug_mode") is True
-        
-        if is_debug:
-            await log_stream.put(f"--- 💻 CODER DEBUG MODE ENABLED 💻 ---")
-            llm = CoderMockLLM()
-            summarizer_llm = CoderMockLLM()
-            embeddings_model = None  # Will skip RAG in debug mode
-
-        elif provider == "gemini":
+        if provider == "gemini":
             if not api_key:
                 return JSONResponse(content={"message": "Gemini API Key required"}, status_code=400)
             llm = ChatGoogleGenerativeAI(model="gemini-3-flash-preview", google_api_key=api_key, temperature=0.7, callbacks=[token_tracker])
             summarizer_llm = llm # Reuse for summary
-            embeddings_model = None
-            await log_stream.put(f"--- Initializing Main Agent LLM: Gemini (gemini-3-flash-preview) ---")
+            embeddings_model = GoogleGenerativeAIEmbeddings(model="models/embedding-001", google_api_key=api_key)
+            await log_stream.put(f"--- Initializing Main Agent LLM: Gemini (gemini-3-flash-preview) & Embeddings ---")
             
         elif provider == "grok":
             if not api_key:
                 return JSONResponse(content={"message": "Grok API Key required"}, status_code=400)
             llm = ChatXAI(model="grok-4-1-fast", xai_api_key=api_key, temperature=0.7, callbacks=[token_tracker])
             summarizer_llm = llm
-            embeddings_model = None
-            await log_stream.put(f"--- Initializing Main Agent LLM: Grok (grok-4.1 fast) ---")
+            
+            # Use OpenRouter for Embeddings (as Grok lacks native support)
+            grok_openrouter_key = params.get("grok_openrouter_key")
+            if not grok_openrouter_key:
+                 await log_stream.put(f"WARNING: No OpenRouter Key provided for Grok embeddings. RAG will be disabled.")
+                 embeddings_model = None
+            else:
+                try:
+                    embeddings_model = OpenAIEmbeddings(
+                        model="google/gemini-embedding-001",
+                        openai_api_key=grok_openrouter_key,
+                        openai_api_base="https://openrouter.ai/api/v1",
+                        check_embedding_ctx_length=False
+                    )
+                    await log_stream.put(f"--- Initializing Main Agent LLM: Grok & Embeddings (via OpenRouter) ---")
+                except Exception as e:
+                    embeddings_model = None
+                    await log_stream.put(f"WARNING: Failed to initialize Grok (OpenRouter) embeddings: {e}")
 
         elif provider == "openrouter":
             if not api_key:
@@ -1769,8 +1822,18 @@ async def build_and_run_graph(payload: dict = Body(...)):
                 callbacks=[token_tracker]
             )
             summarizer_llm = llm
-            embeddings_model = None
-            await log_stream.put(f"--- Initializing Main Agent LLM: OpenRouter ({openrouter_model}) ---")
+            # Use OpenAIEmbeddings with OpenRouter base URL
+            try:
+                embeddings_model = OpenAIEmbeddings(
+                    model="google/gemini-embedding-001",
+                    openai_api_key=api_key,
+                    openai_api_base="https://openrouter.ai/api/v1",
+                    check_embedding_ctx_length=False
+                )
+                await log_stream.put(f"--- Initializing Main Agent LLM: OpenRouter ({openrouter_model}) & Embeddings ---")
+            except Exception as e:
+                embeddings_model = None
+                await log_stream.put(f"WARNING: Failed to initialize OpenRouter embeddings: {e}")
 
         elif provider == "llamacpp":
             llamacpp_url = params.get("llamacpp_url", "http://localhost:8080/v1/chat/completions")
@@ -1780,11 +1843,34 @@ async def build_and_run_graph(payload: dict = Body(...)):
                 max_tokens=4096,
             )
             summarizer_llm = llm
-            embeddings_model = None
-            await log_stream.put(f"--- Initializing Main Agent LLM: LlamaCpp Server ({llamacpp_url}) ---")
+            # Use OpenAIEmbeddings pointing to local server
+            llamacpp_emb_url = params.get("llamacpp_embedding_url", "http://localhost:8080/v1") # Expecting base URL
+            try:
+                embeddings_model = OpenAIEmbeddings(
+                    model="text-embedding-nomic-embed-text-v1.5", # Arbitrary model name for local server
+                    openai_api_base=llamacpp_emb_url,
+                    openai_api_key="sk-no-key-required",
+                    check_embedding_ctx_length=False
+                )
+                await log_stream.put(f"--- Initializing Main Agent LLM: LlamaCpp & Embeddings ({llamacpp_emb_url}) ---")
+            except Exception as e:
+                embeddings_model = None
+                await log_stream.put(f"WARNING: Failed to initialize LlamaCpp embeddings: {e}")
 
         else:
             return JSONResponse(content={"message": "Invalid provider. Please select gemini, grok, openrouter, or llamacpp."}, status_code=400)
+
+        # Custom Debug Mode Logic (Prioritize Mock LLMs but KEEP Embeddings if available)
+        is_debug = params.get("coder_debug_mode") == 'true' or params.get("debug_mode") == 'true' or params.get("coder_debug_mode") is True or params.get("debug_mode") is True
+        
+        if is_debug:
+            await log_stream.put(f"--- 💻 CODER DEBUG MODE ENABLED 💻 ---")
+            llm = CoderMockLLM()
+            summarizer_llm = CoderMockLLM()
+            if embeddings_model:
+                 await log_stream.put(f"--- 🧠 Debug Mode: Using REAL Embeddings for RAG ---")
+            else:
+                 await log_stream.put(f"--- ⚠️ Debug Mode: No Embeddings configured. RAG will be skipped. ---")
 
     except Exception as e:
         error_message = f"Failed to initialize LLM: {e}. Please ensure the selected provider is configured correctly."
@@ -1806,6 +1892,11 @@ async def build_and_run_graph(payload: dict = Body(...)):
     # Check if user explicitly requested coder debug mode
     coder_debug_param = params.get("coder_debug_mode")
     is_code = detected_is_code or (coder_debug_param == "true" or coder_debug_param is True)
+    
+    # Problem 1: Algorithm mode should ALWAYS be treated as a code task
+    if mode == "algorithm":
+        is_code = True
+        await log_stream.put("LOG: Algorithm mode detected. Forcing code task synthesis path.")
     
     if mode == "brainstorm":
         is_code = False # Force false for brainstorming
@@ -2033,6 +2124,7 @@ Your Specialty is: {persona.get('specialty', 'Analysis')}.
     workflow.add_node("synthesis", create_synthesis_node(llm))
     workflow.add_node("code_execution", create_code_execution_node(llm))
     workflow.add_node("archive_epoch", create_archive_epoch_outputs_node())
+    workflow.add_node("update_rag_index", create_update_rag_index_node(llm, embeddings_model)) # Added RAG node
     workflow.add_node("metrics", create_metrics_node(llm))
     workflow.add_node("reframe_and_decompose", create_reframe_and_decompose_node(llm))
     workflow.add_node("update_prompts", create_update_agent_prompts_node(llm))
@@ -2040,7 +2132,6 @@ Your Specialty is: {persona.get('specialty', 'Analysis')}.
     # Add Edges (Architecture)
     # Layer 0 -> Layer 1 ... -> Synthesis
     
-    first_layer_nodes = [f"agent_0_{j}" for j in range(len(all_layers_prompts[0]))]
     first_layer_nodes = [f"agent_0_{j}" for j in range(len(all_layers_prompts[0]))]
     
     # Parallel Entry: Connect START to ALL Layer 0 nodes
@@ -2061,7 +2152,8 @@ Your Specialty is: {persona.get('specialty', 'Analysis')}.
         
     workflow.add_edge("synthesis", "code_execution")
     workflow.add_edge("code_execution", "archive_epoch")
-    workflow.add_edge("archive_epoch", "metrics")
+    workflow.add_edge("archive_epoch", "update_rag_index") # Route to RAG index update
+    workflow.add_edge("update_rag_index", "metrics") # Route to metrics after indexing
     
     # Conditional Edge for Loops
     def epoch_gateway(state):

@@ -610,6 +610,9 @@
             <div id="grok-config" style="display: none; gap: 0.5rem; align-items: center;">
                 <label for="grok-api-key">🌌 API Key:</label>
                 <input type="password" id="grok-api-key" placeholder="Grok API key..." style="min-width: 180px;">
+                <label for="grok-openrouter-key">🔗 OR Key (Embeddings):</label>
+                <input type="password" id="grok-openrouter-key" placeholder="OpenRouter Key..."
+                    style="min-width: 180px;">
             </div>
 
             <div id="openrouter-config" style="display: none; gap: 0.5rem; align-items: center;">
@@ -625,6 +628,9 @@
                 <label for="llamacpp-url">🔗 Server URL:</label>
                 <input type="text" id="llamacpp-url" value="http://localhost:8080/v1/chat/completions"
                     placeholder="http://localhost:8080/v1/chat/completions" style="min-width: 320px;">
+                <label for="llamacpp-embedding-url">🧠 Embedding URL:</label>
+                <input type="text" id="llamacpp-embedding-url" value="http://localhost:8080/v1"
+                    placeholder="http://localhost:8080/v1" style="min-width: 320px;">
             </div>
 
 
@@ -855,16 +861,8 @@
             </div>
         </div>
 
-        <div class="container" id="diagnostic-chat-container">
-            <div class="header-with-button">
-                <h2>Live Diagnostic Chat</h2>
-            </div>
-            <div id="diagnostic-chat-messages" class="chat-messages"></div>
-            <form id="diagnostic-chat-form">
-                <textarea id="diagnostic-chat-input" placeholder="Waiting for graph to start..." required
-                    disabled></textarea>
-                <button type="submit" id="diagnostic-chat-send-button" disabled>Query</button>
-            </form>
+        <div class="container" id="diagnostic-chat-wrapper">
+            <div id="diagnostic-node-chat-container" style="height: 600px;"></div>
         </div>
 
 
@@ -929,10 +927,8 @@
         const perplexityChartCanvas = document.getElementById('perplexityChart').getContext('2d');
         const graphArchitectureSection = document.getElementById('graph-architecture');
 
-        const diagnosticChatContainer = document.getElementById('diagnostic-chat-container');
-        const diagnosticChatMessages = document.getElementById('diagnostic-chat-messages');
-        const diagnosticChatForm = document.getElementById('diagnostic-chat-form');
-        const diagnosticChatInput = document.getElementById('diagnostic-chat-input');
+        const diagnosticChatWrapper = document.getElementById('diagnostic-chat-wrapper');
+        let diagnosticChatInstance = null;
 
         const codeResultContainer = document.getElementById('code-result-container');
         const codeOutput = document.getElementById('code-output');
@@ -1406,14 +1402,17 @@
         const savedOpenrouterApiKey = localStorage.getItem('openrouter_api_key');
         const savedOpenrouterModel = localStorage.getItem('openrouter_model');
         const savedLlamacppUrl = localStorage.getItem('llamacpp_url');
+        const savedLlamacppEmbeddingUrl = localStorage.getItem('llamacpp_embedding_url');
 
 
         llmProviderSelect.value = savedProvider;
         if (savedApiKey) geminiApiKeyInput.value = savedApiKey;
         if (savedGrokApiKey) document.getElementById('grok-api-key').value = savedGrokApiKey;
+        if (localStorage.getItem('grok_openrouter_key')) document.getElementById('grok-openrouter-key').value = localStorage.getItem('grok_openrouter_key');
         if (savedOpenrouterApiKey) document.getElementById('openrouter-api-key').value = savedOpenrouterApiKey;
         if (savedOpenrouterModel) document.getElementById('openrouter-model').value = savedOpenrouterModel;
         if (savedLlamacppUrl) document.getElementById('llamacpp-url').value = savedLlamacppUrl;
+        if (savedLlamacppEmbeddingUrl) document.getElementById('llamacpp-embedding-url').value = savedLlamacppEmbeddingUrl;
 
 
         // Show/hide config based on provider
@@ -1446,17 +1445,21 @@
             const provider = llmProviderSelect.value;
             const apiKey = geminiApiKeyInput.value.trim();
             const grokApiKey = document.getElementById('grok-api-key').value.trim();
+            const grokOpenrouterKey = document.getElementById('grok-openrouter-key').value.trim();
             const openrouterApiKey = document.getElementById('openrouter-api-key').value.trim();
             const openrouterModel = document.getElementById('openrouter-model').value.trim();
             const llamacppUrl = document.getElementById('llamacpp-url').value.trim();
+            const llamacppEmbeddingUrl = document.getElementById('llamacpp-embedding-url').value.trim();
 
 
             localStorage.setItem('llm_provider', provider);
             if (apiKey) localStorage.setItem('gemini_api_key', apiKey);
             if (grokApiKey) localStorage.setItem('grok_api_key', grokApiKey);
+            if (grokOpenrouterKey) localStorage.setItem('grok_openrouter_key', grokOpenrouterKey);
             if (openrouterApiKey) localStorage.setItem('openrouter_api_key', openrouterApiKey);
             if (openrouterModel) localStorage.setItem('openrouter_model', openrouterModel);
             if (llamacppUrl) localStorage.setItem('llamacpp_url', llamacppUrl);
+            if (llamacppEmbeddingUrl) localStorage.setItem('llamacpp_embedding_url', llamacppEmbeddingUrl);
 
 
             apiKeyStatus.textContent = '✓ Saved';
@@ -1504,6 +1507,7 @@
                     const openrouterApiKey = localStorage.getItem('openrouter_api_key');
                     const openrouterModel = localStorage.getItem('openrouter_model') || 'stepfun/step-3.5-flash:free';
                     const llamacppUrl = localStorage.getItem('llamacpp_url') || 'http://localhost:8080/v1/chat/completions';
+                    const llamacppEmbeddingUrl = localStorage.getItem('llamacpp_embedding_url') || 'http://localhost:8080/v1';
 
 
                     if (provider === 'gemini' && !apiKey) {
@@ -1542,9 +1546,11 @@
                         prompt: message,
                         provider: provider,
                         api_key: selectedApiKey,
+                        grok_openrouter_key: document.getElementById('grok-openrouter-key').value.trim(),
 
                         openrouter_model: openrouterModel,
                         llamacpp_url: llamacppUrl,
+                        llamacpp_embedding_url: llamacppEmbeddingUrl,
                         vector_word_size: 2,
                         prompt_alignment: 1.0,
                         density: 1.0,
@@ -1584,58 +1590,51 @@
 
 
 
-        const handleDiagnosticChatSubmit = async (e) => {
-            e.preventDefault();
-            const message = diagnosticChatInput.value.trim();
-            if (!message || !currentSessionId) return;
+        if (document.getElementById('diagnostic-node-chat-container')) {
+            diagnosticChatInstance = NodeChat.init('diagnostic-node-chat-container', {
+                title: 'Diagnostic Chat',
+                subtitle: 'RAG Index Explorer',
+                placeholder: 'Query the RAG index (e.g. "Find documents about transformer decoding")...',
+                onSend: async (message, chat) => {
+                    if (!currentSessionId) {
+                        alert('Please start a graph run first.');
+                        chat.finishStreaming();
+                        return;
+                    }
 
-            const userMsgDiv = document.createElement('div');
-            userMsgDiv.className = 'chat-message diagnostic-user-message';
-            userMsgDiv.textContent = message;
-            diagnosticChatMessages.appendChild(userMsgDiv);
-            diagnosticChatMessages.scrollTop = diagnosticChatMessages.scrollHeight;
+                    try {
+                        const response = await fetch('/diagnostic_chat', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ session_id: currentSessionId, message: message })
+                        });
+                        if (!response.ok) {
+                            const errorText = await response.text();
+                            chat.appendAIMessage(`Error: ${errorText}`);
+                            return;
+                        }
 
-            diagnosticChatInput.value = '';
-            diagnosticChatInput.disabled = true;
+                        const reader = response.body.getReader();
+                        const decoder = new TextDecoder();
+                        let aiResponseText = '';
+                        const bubble = chat.startAIResponse();
 
-            const aiMsgDiv = document.createElement('div');
-            aiMsgDiv.className = 'chat-message diagnostic-ai-message';
-            aiMsgDiv.textContent = '...';
-            diagnosticChatMessages.appendChild(aiMsgDiv);
-            diagnosticChatMessages.scrollTop = diagnosticChatMessages.scrollHeight;
-
-            try {
-                const response = await fetch('/diagnostic_chat', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ session_id: currentSessionId, message: message })
-                });
-                if (!response.ok) {
-                    const errorText = await response.text();
-                    aiMsgDiv.textContent = `Error: ${errorText}`;
-                    return;
+                        while (true) {
+                            const { value, done } = await reader.read();
+                            if (done) break;
+                            const chunk = decoder.decode(value, { stream: true });
+                            aiResponseText += chunk;
+                            chat.updateAIResponse(bubble, aiResponseText);
+                        }
+                        chat.finishStreaming(aiResponseText);
+                    } catch (error) {
+                        chat.appendAIMessage(`Error: ${error.message}`);
+                    }
                 }
-
-                const reader = response.body.getReader();
-                const decoder = new TextDecoder();
-                let aiResponseText = '';
-                aiMsgDiv.textContent = '';
-
-                while (true) {
-                    const { value, done } = await reader.read();
-                    if (done) break;
-                    const chunk = decoder.decode(value, { stream: true });
-                    aiResponseText += chunk;
-                    aiMsgDiv.innerHTML = marked.parse(aiResponseText);
-                    diagnosticChatMessages.scrollTop = diagnosticChatMessages.scrollHeight;
-                }
-            } catch (error) {
-                aiMsgDiv.textContent = `Error: ${error.message}`;
-            } finally {
-                diagnosticChatInput.disabled = false;
-                diagnosticChatInput.focus();
-            }
-        };
+            });
+            // Lock until session starts
+            diagnosticChatInstance.setUILocked(true);
+        }
 
 
 
@@ -1664,7 +1663,10 @@
             graphArchitectureSection.classList.add('hidden');
             qnnImportContainer.classList.add('hidden');
 
-            diagnosticChatMessages.innerHTML = '';
+            if (diagnosticChatInstance) {
+                diagnosticChatInstance.clearChat();
+                diagnosticChatInstance.setUILocked(true);
+            }
             allPerplexityValues = [];
             allLbelsData = [];
             renderPerplexityChart();
@@ -1794,18 +1796,26 @@
             const provider = document.getElementById('llm-provider').value;
             const geminiKey = document.getElementById('gemini-api-key').value.trim();
             const grokKey = document.getElementById('grok-api-key').value.trim();
+            const grokOpenrouterKey = document.getElementById('grok-openrouter-key').value.trim();
             const openrouterKey = document.getElementById('openrouter-api-key').value.trim();
             const openrouterMdl = document.getElementById('openrouter-model').value.trim();
             const llamacppServerUrl = document.getElementById('llamacpp-url').value.trim();
+            const llamacppEmbUrl = document.getElementById('llamacpp-embedding-url').value.trim();
 
 
             params.provider = provider;
             if (provider === 'gemini') params.api_key = geminiKey;
-            if (provider === 'grok') params.api_key = grokKey;
+
+            if (provider === 'grok') {
+                params.api_key = grokKey;
+                params.grok_openrouter_key = grokOpenrouterKey;
+            }
+
             if (provider === 'openrouter') params.api_key = openrouterKey;
 
             params.openrouter_model = openrouterMdl;
             params.llamacpp_url = llamacppServerUrl;
+            params.llamacpp_embedding_url = llamacppEmbUrl;
 
             runGraph({ params, mode: 'algorithm' }, '/build_and_run_graph');
         });
@@ -1997,7 +2007,6 @@
                         Prism.highlightElement(codeOutput);
                         codeReasoning.textContent = answer.reasoning || "Synthesis complete.";
                         exportQnnButton.classList.remove('hidden');
-                        diagnosticChatContainer.classList.add('hidden');
 
                         addLogMessage(`<strong>✅ Graph results visualized below.</strong>`, { isHTML: true, color: 'lime' });
                     } else if (answer.mode === 'brainstorm' || nodeChatInstance) {
@@ -2035,13 +2044,15 @@
             } else if (rawMessage.includes('__session_id__')) {
                 session_id = rawMessage.replace('__session_id__', '');
                 currentSessionId = session_id.replace('data: ', '').trim();
-                const diagInput = document.getElementById('diagnostic-chat-input');
-                const diagButton = document.getElementById('diagnostic-chat-send-button');
-                diagInput.disabled = false;
-                diagButton.disabled = false;
+
+                if (diagnosticChatInstance) {
+                    diagnosticChatInstance.setUILocked(false);
+                    diagnosticChatInstance.setEyeState('animate');
+                    setTimeout(() => diagnosticChatInstance.setEyeState(null), 2000);
+                }
+
                 addLogMessage(`>>> Session ID: ${currentSessionId}`, { color: 'cyan' });
                 addLogMessage(`<strong>✅ Diagnostic chat is now active.</strong>`, { isHTML: true, color: 'lime' });
-                diagInput.placeholder = "Live diagnostic rag-chat is active.";
                 return;
             } else if ((rawMessage.includes('"type":') || rawMessage.startsWith('{')) && (rawMessage.includes('distillation_update') || rawMessage.includes('distillation_complete'))) {
                 try {
@@ -2091,14 +2102,7 @@
             eventSource.close();
         };
 
-        diagnosticChatForm.addEventListener('submit', handleDiagnosticChatSubmit);
-
-        diagnosticChatInput.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                diagnosticChatForm.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
-            }
-        });
+        // Legacy diagnostic listeners removed
     </script>
     <script src="js/prism-core.min.js"></script>
     <script src="js/prism-autoloader.min.js"></script>
