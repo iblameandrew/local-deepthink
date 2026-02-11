@@ -51,7 +51,10 @@ Current problem:
 Agent Solutions (containing code snippets):
 {agent_solutions}
 
-Synthesize the final, complete code application:
+Synthesize the final, complete code application. 
+CRITICAL: The final output must be ONLY the runnable code, wrapped in triple backticks with a "python" language identifier (e.g., ```python\n[CODE HERE]\n```). Do not include any other text or explanations before or after the code block.
+
+Final code application:
 """)
     return prompt | llm | StrOutputParser()
 

@@ -5,6 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Free Deep Think</title>
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
     <script src="js/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <link rel="stylesheet" href="css/prism-okaidia.min.css">
@@ -211,7 +212,6 @@
 
         #download-log-button,
         .download-paper-button,
-        #download-report-button,
         #export-qnn-button {
             width: auto;
             padding: 0.5rem 1rem;
@@ -222,7 +222,6 @@
 
         #download-log-button:hover:not(:disabled),
         .download-paper-button:hover:not(:disabled),
-        #download-report-button:hover:not(:disabled),
         #export-qnn-button:hover:not(:disabled) {
             background-color: #3a3b44;
         }
@@ -263,13 +262,11 @@
             white-space: pre-wrap;
         }
 
-        #chat-form,
         #diagnostic-chat-form {
             display: flex;
             gap: 1rem;
         }
 
-        #chat-input,
         #diagnostic-chat-input {
             flex-grow: 1;
             min-height: 50px;
@@ -278,25 +275,13 @@
             resize: none;
         }
 
-        #chat-send-button,
         #diagnostic-chat-send-button {
             width: auto;
             margin-bottom: 0;
             align-self: flex-end;
         }
 
-        #harvest-button {
-            width: auto;
-            padding: 0.5rem 1.5rem;
-            margin-bottom: 0;
-            font-size: 1rem;
-            font-weight: bold;
-            background-color: #28a745;
-        }
 
-        #harvest-button:hover:not(:disabled) {
-            background-color: #218838;
-        }
 
         #diagnostic-chat-container {
             border: 2px solid #007bff;
@@ -434,16 +419,24 @@
         }
 
         /* Brainstorming Mode */
-        .brainstorm-container {
+        /* Mode Containers */
+        /* .container display: block; REMOVED to avoid conflicts */
+
+        .brainstorm-container,
+        .algorithm-container,
+        .distillation-container {
             display: none;
         }
 
-        .brainstorm-container.active {
+        .brainstorm-container.active,
+        .algorithm-container.active,
+        .distillation-container.active {
             display: block;
         }
 
-        .algorithm-container.hidden {
-            display: none;
+        /* Utility class to force hide */
+        .hidden {
+            display: none !important;
         }
 
         .expert-panel {
@@ -606,7 +599,7 @@
                 <option value="grok">Grok (xAI)</option>
                 <option value="openrouter">OpenRouter</option>
                 <option value="llamacpp">LlamaCpp Server</option>
-                <option value="ollama">Ollama (Local)</option>
+
             </select>
 
             <div id="gemini-config" style="display: flex; gap: 0.5rem; align-items: center;">
@@ -634,11 +627,7 @@
                     placeholder="http://localhost:8080/v1/chat/completions" style="min-width: 320px;">
             </div>
 
-            <div id="ollama-config" style="display: none; gap: 0.5rem; align-items: center;">
-                <label for="ollama-model-global">📦 Model:</label>
-                <input type="text" id="ollama-model-global" value="dengcao/Qwen3-30B-A3B-Instruct-2507:latest"
-                    placeholder="Ollama model..." style="min-width: 250px;">
-            </div>
+
 
             <button type="button" id="save-api-key-btn">Save</button>
             <span id="api-key-status" class="api-key-status"></span>
@@ -650,11 +639,83 @@
         <div class="mode-tabs">
             <button class="mode-tab active" data-mode="algorithm">🧬 Algorithm Design Mode</button>
             <button class="mode-tab" data-mode="brainstorm">🧠 Brainstorming Mode</button>
+            <button class="mode-tab" data-mode="distillation">⚗️ Knowledge Distillation</button>
+        </div>
+    </div>
+
+
+    <!-- Knowledge Distillation Mode Container -->
+    <div class="container distillation-container hidden" id="distillation-mode">
+        <div class="section">
+            <h2 style="color: #0f0; border-bottom-color: #0f0;">⚗️ Knowledge Distillation Graph</h2>
+            <form id="distillation-form">
+                <label for="distil-topics">Topics (comma separated):</label>
+                <input type="text" id="distil-topics"
+                    placeholder="e.g. Artificial Intelligence, Neuroscience, Philosophy" required>
+
+                <label for="distil-anchor">Anchor Question:</label>
+                <textarea id="distil-anchor" placeholder="Enter the grand objective or anchor question..."
+                    style="min-height: 80px;" required></textarea>
+
+                <label for="distil-budget">Token Budget:</label>
+                <input type="number" id="distil-budget" value="1000000" step="10000">
+
+                <div style="display: flex; align-items: center; gap: 8px; margin: 10px 0;">
+                    <input type="checkbox" id="distil-debug-mode">
+                    <label for="distil-debug-mode" style="color: #aaa; cursor: pointer; font-size: 0.9rem;">
+                        🚀 Debug Mode (Mock Data & Fast Epochs)
+                    </label>
+                </div>
+
+                <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                    <button type="submit" id="start-distillation-btn" style="background-color: #28a745;">Start
+                        Distillation</button>
+                    <button type="button" id="stop-distillation-btn" style="background-color: #dc3545; display: none;"
+                        onclick="stopDistillation()">⏹ Stop</button>
+                    <button type="button" id="download-distillation-btn"
+                        style="background-color: #007bff; display: none;"
+                        onclick="window.open('/download_distillation','_blank')">⬇ Download Dataset</button>
+                </div>
+            </form>
+
+            <!-- Token Counter Bar -->
+            <div id="distil-token-bar" style="margin-top: 10px; display: none;">
+                <div
+                    style="display: flex; justify-content: space-between; font-size: 0.8rem; color: #aaa; margin-bottom: 4px;">
+                    <span id="distil-token-info">0 / 1,000,000 tokens</span>
+                    <span id="distil-epoch-info">Epoch: 0</span>
+                    <span id="distil-qa-info">QA Pairs: 0</span>
+                </div>
+                <div style="width: 100%; background: #333; border-radius: 4px; height: 8px;">
+                    <div id="distil-progress"
+                        style="width: 0%; background: linear-gradient(90deg, #0f0, #0a0); height: 100%; border-radius: 4px; transition: width 0.3s;">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h3>Topology & Metrics</h3>
+            <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
+                <div style="flex: 1; min-width: 300px;">
+                    <h4 style="margin-top:0;">ASCII Topology (1×2×2×2×2×2×1)</h4>
+                    <div id="distil-topology"
+                        style="min-height: 300px; background: #000; padding: 10px; font-family: monospace; white-space: pre; font-size: 0.75rem; overflow: auto; border: 1px solid #333; color: #00ff00; line-height: 1.4;">
+                        Waiting for data...</div>
+                </div>
+                <div style="flex: 1; min-width: 300px;">
+                    <h4 style="margin-top:0;">Distillation Console</h4>
+                    <div id="distil-console"
+                        style="min-height: 300px; max-height: 400px; background: #0a0a0a; padding: 10px; font-family: monospace; font-size: 0.75rem; overflow-y: auto; border: 1px solid #333; color: #0f0;">
+                        Waiting for distillation to start...</div>
+                </div>
+            </div>
         </div>
     </div>
 
     <!-- Brainstorming Mode Container -->
-    <div class="container brainstorm-container" id="brainstorm-mode">
+    <div class="container brainstorm-container hidden" id="brainstorm-mode">
+        <!-- ... existing brainstorm content ... -->
         <div class="section">
             <div style="margin-bottom: 10px; display: flex; align-items: center; gap: 15px; flex-wrap: wrap;">
                 <div style="display: flex; align-items: center; gap: 5px;">
@@ -694,19 +755,23 @@
         </div>
     </div>
 
+
+
     <!-- Algorithm Design Mode Container -->
-    <div class="algorithm-container" id="algorithm-mode">
+    <div class="algorithm-container hidden" id="algorithm-mode">
         <div class="container">
             <div id="qnn-import-container" class="section qnn-import-section">
                 <h2>Load a Pre-Trained QNN</h2>
-                <p>Import a previously exported QNN JSON file to continue training or run in inference-only mode.</p>
+                <p>Import a previously exported QNN JSON file to continue training or run in inference-only
+                    mode.</p>
                 <form id="import-qnn-form">
                     <label for="qnn-file-input">Select QNN File</label>
                     <input type="file" id="qnn-file-input" accept=".json">
                 </form>
                 <div id="imported-qnn-info" class="hidden">
                     <p><strong>File Loaded:</strong> <span id="loaded-filename"></span></p>
-                    <p>A QNN file has been loaded. You can modify the prompt below. Then, choose an execution mode:</p>
+                    <p>A QNN file has been loaded. You can modify the prompt below. Then, choose an execution
+                        mode:</p>
                     <div id="inference-options">
                         <button id="inference-continue-training-btn" hidden>Continue Training</button>
                         <button id="inference-only-btn">Run Inference Only</button>
@@ -719,10 +784,6 @@
                 <form id="graph-params-form">
                     <div id="debug-options" style="display: flex; gap: 2rem; margin-bottom: 1rem; margin-top: 0.5rem;">
                         <div class="mbti-option">
-                            <input type="checkbox" id="debug_mode" name="debug_mode" value="true">
-                            <label for="debug_mode">🚀 Enable Debug Mode (Text)</label>
-                        </div>
-                        <div class="mbti-option">
                             <input type="checkbox" id="coder_debug_mode" name="coder_debug_mode" value="true">
                             <label for="coder_debug_mode">💻 Enable Coder Debug (Code)</label>
                         </div>
@@ -731,8 +792,7 @@
                     <label for="cot_trace_depth">CoT trace depth (max 32):</label>
                     <input type="number" id="cot_trace_depth" name="cot_trace_depth" value="2" max="32" min="2"
                         required>
-                    <label for="num_questions">Number of questions for final report (5-100):</label>
-                    <input type="number" id="num_questions" name="num_questions" value="25" min="5" max="100" required>
+
                     <label for="num_epochs">Number of epochs:</label>
                     <input type="number" id="num_epochs" name="num_epochs" value="1" required>
                     <label for="vector_word_size">Vector word size (Number of verbs per agent):</label>
@@ -809,28 +869,7 @@
 
 
 
-        <div class="container hidden" id="chat-container">
-            <div class="header-with-button">
-                <h2>Train the interrogator: ask what you want to know, and it will appear in the final report</h2>
-                <div style="display: flex; gap: 1rem;">
-                    <button id="harvest-button">HARVEST</button>
-                </div>
-            </div>
-            <div id="chat-messages" class="chat-messages"></div>
-            <form id="chat-form">
-                <textarea id="chat-input" placeholder="Ask a question about the final generated knowledge..."
-                    required></textarea>
-                <button type="submit" id="chat-send-button">Send</button>
-            </form>
-        </div>
 
-        <div class="container hidden" id="report-container">
-            <h2>Final Report</h2>
-            <p>The graph execution is complete. The generated academic papers have been compiled into a single zip
-                archive
-                for you to download.</p>
-            <button id="download-report-button">Download Full Report (.zip)</button>
-        </div>
 
         <div class="container hidden" id="code-result-container">
             <h2>Generated Code</h2>
@@ -857,7 +896,7 @@
         <canvas id="perplexityChart"></canvas>
     </div>
 
-    <div class="container">
+    <div class="container" id="log-wrapper">
         <div class="header-with-button">
             <h2>Real-time Graph Activity</h2>
             <div id="token-display"
@@ -871,7 +910,7 @@
         <div id="log-container"></div>
     </div>
 
-    <div class="container">
+    <div class="container" id="graph-wrapper">
         <h2>Graph Visualization</h2>
         <div id="graph-container">
             <p>ASCII graph will be displayed here after the process starts...</p>
@@ -884,21 +923,11 @@
         const runButton = document.getElementById('run-button');
         const logContainer = document.getElementById('log-container');
         const graphContainer = document.getElementById('graph-container');
-        const ollamaModelSection = document.getElementById('ollama-model-section');
-        const debugModeCheckbox = document.getElementById('debug_mode');
         const coderDebugModeCheckbox = document.getElementById('coder_debug_mode');
         const downloadLogButton = document.getElementById('download-log-button');
-        const reportContainer = document.getElementById('report-container');
-        const downloadReportButton = document.getElementById('download-report-button');
         const perplexityChartContainer = document.getElementById('perplexity-chart-container');
         const perplexityChartCanvas = document.getElementById('perplexityChart').getContext('2d');
         const graphArchitectureSection = document.getElementById('graph-architecture');
-
-        const chatContainer = document.getElementById('chat-container');
-        const chatMessages = document.getElementById('chat-messages');
-        const chatForm = document.getElementById('chat-form');
-        const chatInput = document.getElementById('chat-input');
-        const harvestButton = document.getElementById('harvest-button');
 
         const diagnosticChatContainer = document.getElementById('diagnostic-chat-container');
         const diagnosticChatMessages = document.getElementById('diagnostic-chat-messages');
@@ -921,10 +950,342 @@
         const exportQnnButton = document.getElementById('export-qnn-button');
 
         let fullLogContent = '';
+
         let perplexityChart = null;
         let allPerplexityValues = [];
         let allLbelsData = [];
         let currentSessionId = null;
+
+        const addLogMessage = (text, options = {}) => {
+            fullLogContent += text + '\n';
+            if (downloadLogButton.disabled) {
+                downloadLogButton.disabled = false;
+            }
+            const container = document.createElement('div');
+            container.style.margin = '0';
+            container.style.lineHeight = '1.4';
+
+            if (options.isHTML) {
+                container.innerHTML = text;
+            } else {
+                container.textContent = text;
+            }
+
+            if (options.color) container.style.color = options.color;
+
+            logContainer.appendChild(container);
+            logContainer.scrollTop = logContainer.scrollHeight;
+        };
+
+        const downloadLog = () => {
+            const blob = new Blob([fullLogContent], { type: 'text/plain;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+            a.download = `noa-run-log-${timestamp}.txt`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        };
+
+        const renderPerplexityChart = () => {
+            if (perplexityChart) {
+                perplexityChart.destroy();
+            }
+            const labels = allLbelsData;
+            const data = allPerplexityValues;
+
+            perplexityChart = new Chart(perplexityChartCanvas, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Average Agent Perplexity',
+                        data: data,
+                        borderColor: 'rgba(255, 75, 75, 1)',
+                        backgroundColor: 'rgba(255, 75, 75, 0.2)',
+                        fill: true,
+                        tension: 0.1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: { display: true, text: 'Perplexity Score' }
+                        },
+                        x: {
+                            title: { display: true, text: 'Epoch' }
+                        }
+                    }
+                }
+            });
+        };
+
+        // --- Distillation Mode Variables ---
+        const distillationContainer = document.getElementById('distillation-mode');
+        const distillationForm = document.getElementById('distillation-form');
+        const distilTopologyContainer = document.getElementById('distil-topology');
+
+        const startDistillationBtn = document.getElementById('start-distillation-btn');
+
+        // --- Mode Switching Logic ---
+        document.querySelectorAll('.mode-tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                document.querySelectorAll('.mode-tab').forEach(t => t.classList.remove('active'));
+                tab.classList.add('active');
+
+                // Re-fetch elements to be safe
+                const bs = document.getElementById('brainstorm-mode');
+                const algo = document.getElementById('algorithm-mode');
+                const distil = document.getElementById('distillation-mode');
+
+                const mode = tab.dataset.mode;
+
+                if (bs) {
+                    bs.classList.add('hidden');
+                    bs.classList.remove('active');
+                }
+                if (algo) algo.classList.add('hidden');
+                if (distil) distil.classList.add('hidden');
+
+                // Update Containers
+                [bs, algo, distil].forEach(c => {
+                    if (c) {
+                        c.classList.add('hidden');
+                        c.classList.remove('active');
+                    }
+                });
+
+                if (mode === 'brainstorm') {
+                    if (bs) {
+                        bs.classList.remove('hidden');
+                        bs.classList.add('active');
+                    }
+                } else if (mode === 'algorithm') {
+                    if (algo) {
+                        algo.classList.remove('hidden');
+                        algo.classList.add('active');
+                    }
+                } else if (mode === 'distillation') {
+                    if (distil) {
+                        distil.classList.remove('hidden');
+                        distil.classList.add('active');
+                    }
+                }
+
+                const globalPerplexity = document.getElementById('perplexity-chart-container');
+                const globalLogComp = document.getElementById('log-wrapper');
+                const globalGraphComp = document.getElementById('graph-wrapper');
+
+                if (mode === 'brainstorm') {
+                    if (globalPerplexity) globalPerplexity.classList.remove('hidden');
+                    if (globalLogComp) globalLogComp.classList.remove('hidden');
+                    if (globalGraphComp) globalGraphComp.classList.remove('hidden');
+                } else if (mode === 'algorithm') {
+                    if (globalPerplexity) globalPerplexity.classList.remove('hidden');
+                    if (globalLogComp) globalLogComp.classList.remove('hidden');
+                    if (globalGraphComp) globalGraphComp.classList.remove('hidden');
+                } else if (mode === 'distillation') {
+                    if (globalPerplexity) globalPerplexity.classList.remove('hidden');
+                    if (globalLogComp) globalLogComp.classList.remove('hidden');
+                    if (globalGraphComp) globalGraphComp.classList.add('hidden');
+                }
+            });
+
+            // Trigger click on active tab to set initial state
+            if (tab.classList.contains('active')) {
+                // Wait for DOM slightly to be safe
+                setTimeout(() => tab.click(), 0);
+            }
+        });
+
+        // --- Distillation Form Logic ---
+        if (distillationForm) {
+            distillationForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const topics = document.getElementById('distil-topics').value;
+                const anchor = document.getElementById('distil-anchor').value;
+                const budget = document.getElementById('distil-budget').value;
+                const debugMode = document.getElementById('distil-debug-mode').checked;
+
+                // Read global provider settings
+                const provider = document.getElementById('llm-provider').value;
+                const geminiKey = document.getElementById('gemini-api-key').value.trim();
+                const grokKey = document.getElementById('grok-api-key').value.trim();
+                const openrouterKey = document.getElementById('openrouter-api-key').value.trim();
+                const openrouterMdl = document.getElementById('openrouter-model').value.trim();
+                const llamacppServerUrl = document.getElementById('llamacpp-url').value.trim();
+
+
+                let api_key = '';
+                if (provider === 'gemini') api_key = geminiKey;
+                if (provider === 'grok') api_key = grokKey;
+                if (provider === 'openrouter') api_key = openrouterKey;
+
+                const startBtn = document.getElementById('start-distillation-btn');
+                const stopBtn = document.getElementById('stop-distillation-btn');
+                const downloadBtn = document.getElementById('download-distillation-btn');
+                const tokenBar = document.getElementById('distil-token-bar');
+                const distilConsole = document.getElementById('distil-console');
+
+                startBtn.disabled = true;
+                startBtn.textContent = "Running...";
+                stopBtn.style.display = '';
+                downloadBtn.style.display = 'none';
+                tokenBar.style.display = '';
+                distilConsole.innerHTML = '<div style="color:cyan;">--- Distillation Started (Debug: ' + debugMode + ', Provider: ' + provider + ') ---</div>';
+
+                try {
+                    const resp = await fetch('/start_distillation', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            topics,
+                            anchor_question: anchor,
+                            token_budget: parseInt(budget),
+                            debug_mode: debugMode,
+                            provider: provider,
+                            api_key: api_key,
+
+                            openrouter_model: openrouterMdl,
+                            llamacpp_url: llamacppServerUrl
+                        })
+                    });
+
+                    if (!resp.ok) {
+                        const errData = await resp.json();
+                        throw new Error(errData.message || 'Server error');
+                    }
+
+                } catch (e) {
+                    console.error(e);
+                    alert("Error starting distillation: " + e.message);
+                    startBtn.disabled = false;
+                    startBtn.textContent = "Start Distillation";
+                    stopBtn.style.display = 'none';
+                    startBtn.textContent = "Start Distillation";
+                    stopBtn.style.display = 'none';
+                }
+            });
+        }
+
+        // --- Distillation Helper Functions ---
+
+        function appendDistilConsole(msg, color) {
+            const el = document.getElementById('distil-console');
+            if (!el) return;
+            const line = document.createElement('div');
+            line.textContent = msg;
+            line.style.color = color || '#0f0';
+            el.appendChild(line);
+            el.scrollTop = el.scrollHeight;
+        }
+
+        function updateDistilMetrics(update) {
+            const tokenInfo = document.getElementById('distil-token-info');
+            const epochInfo = document.getElementById('distil-epoch-info');
+            const qaInfo = document.getElementById('distil-qa-info');
+            const progress = document.getElementById('distil-progress');
+            if (tokenInfo) tokenInfo.textContent = `${(update.token_count || 0).toLocaleString()} / ${(update.token_budget || 0).toLocaleString()} tokens (in: ${(update.input_tokens || 0).toLocaleString()}, out: ${(update.output_tokens || 0).toLocaleString()})`;
+            if (epochInfo) epochInfo.textContent = `Epoch: ${update.epoch || 0}`;
+            if (qaInfo) qaInfo.textContent = `QA Pairs: ${update.qa_pairs_count || 0}`;
+            if (progress && update.token_budget) {
+                const pct = Math.min(100, ((update.token_count || 0) / update.token_budget) * 100);
+                progress.style.width = pct + '%';
+            }
+        }
+
+        function renderAsciiTopology(topology, epoch) {
+            const el = document.getElementById('distil-topology');
+            if (!el || !topology) return;
+
+            const ARCHETYPES = {
+                1: 'Initiator', 2: 'Builder', 3: 'Connector', 4: 'Preserver',
+                5: 'Performer', 6: 'Analyst', 7: 'Diplomat', 8: 'Transformer',
+                9: 'Explorer', 10: 'Architect', 11: 'Visionary', 12: 'Dreamer'
+            };
+
+            let lines = [];
+            lines.push(`╔══════════════════════════════════════════╗`);
+            lines.push(`║  QNN Topology — Epoch ${String(epoch).padStart(3)}                ║`);
+            lines.push(`║  Structure: 1×2×2×2×2×2×1                ║`);
+            lines.push(`╚══════════════════════════════════════════╝`);
+            lines.push('');
+
+            const maxNameLen = 14;
+
+            topology.forEach((layer, li) => {
+                const layerLabel = `Layer ${li}`;
+                const layerNodes = layer.map(agent => {
+                    const name = ARCHETYPES[agent.archetype_id] || 'Mixed';
+                    const diff = agent.difficulty_history && agent.difficulty_history.length > 0
+                        ? agent.difficulty_history[agent.difficulty_history.length - 1]
+                        : '—';
+                    const diffIcon = diff === 'Hard' ? '🔴' : diff === 'Easy' ? '🟢' : '⚪';
+                    const inherited = agent.inherited_from ? '⧫' : ' ';
+                    const shortName = name.substring(0, maxNameLen).padEnd(maxNameLen);
+                    return `│${inherited}${diffIcon} ${shortName}│`;
+                });
+
+                // Center the nodes
+                const totalWidth = 46;
+                const nodeBlockWidth = layerNodes.join('  ').length;
+                const indent = Math.max(0, Math.floor((totalWidth - nodeBlockWidth) / 2));
+                const padding = ' '.repeat(indent);
+
+                // Draw borders
+                const topBorders = layer.map(agent => {
+                    return `┌${'─'.repeat(maxNameLen + 3)}┐`;
+                });
+                const botBorders = layer.map(agent => {
+                    return `└${'─'.repeat(maxNameLen + 3)}┘`;
+                });
+
+                lines.push(`  ${layerLabel}`);
+                lines.push(`${padding}${topBorders.join('  ')}`);
+                lines.push(`${padding}${layerNodes.join('  ')}`);
+                lines.push(`${padding}${botBorders.join('  ')}`);
+
+                // Draw connector lines between layers
+                if (li < topology.length - 1) {
+                    if (layer.length === 1 && topology[li + 1].length === 2) {
+                        lines.push(`${padding}       ┌──┴──┐`);
+                    } else if (layer.length === 2 && topology[li + 1].length === 2) {
+                        lines.push(`${padding}       │     │`);
+                    } else if (layer.length === 2 && topology[li + 1].length === 1) {
+                        lines.push(`${padding}       └──┬──┘`);
+                    } else {
+                        lines.push(`${padding}         │`);
+                    }
+                }
+            });
+
+            el.textContent = lines.join('\n');
+        }
+
+        async function stopDistillation() {
+            try {
+                await fetch('/stop_distillation', { method: 'POST' });
+                appendDistilConsole('⏹ Stop requested...', '#ff8800');
+                if (window._distilEvtSource) {
+                    window._distilEvtSource.close();
+                    window._distilEvtSource = null;
+                }
+                const startBtn = document.getElementById('start-distillation-btn');
+                const stopBtn = document.getElementById('stop-distillation-btn');
+                const downloadBtn = document.getElementById('download-distillation-btn');
+                if (startBtn) { startBtn.disabled = false; startBtn.textContent = 'Start Distillation'; }
+                if (stopBtn) stopBtn.style.display = 'none';
+                if (downloadBtn) downloadBtn.style.display = '';
+            } catch (e) {
+                console.error('Failed to stop distillation:', e);
+            }
+        }
+
         let importedSessionId = null;
         let importedStateContent = null;
 
@@ -1036,8 +1397,7 @@
         const grokConfig = document.getElementById('grok-config');
         const openrouterConfig = document.getElementById('openrouter-config');
         const llamacppConfig = document.getElementById('llamacpp-config');
-        const ollamaConfig = document.getElementById('ollama-config');
-        const ollamaModelGlobal = document.getElementById('ollama-model-global');
+
 
         // Load settings from localStorage on page load
         const savedProvider = localStorage.getItem('llm_provider') || 'gemini';
@@ -1046,7 +1406,7 @@
         const savedOpenrouterApiKey = localStorage.getItem('openrouter_api_key');
         const savedOpenrouterModel = localStorage.getItem('openrouter_model');
         const savedLlamacppUrl = localStorage.getItem('llamacpp_url');
-        const savedOllamaModel = localStorage.getItem('ollama_model');
+
 
         llmProviderSelect.value = savedProvider;
         if (savedApiKey) geminiApiKeyInput.value = savedApiKey;
@@ -1054,7 +1414,7 @@
         if (savedOpenrouterApiKey) document.getElementById('openrouter-api-key').value = savedOpenrouterApiKey;
         if (savedOpenrouterModel) document.getElementById('openrouter-model').value = savedOpenrouterModel;
         if (savedLlamacppUrl) document.getElementById('llamacpp-url').value = savedLlamacppUrl;
-        if (savedOllamaModel) ollamaModelGlobal.value = savedOllamaModel;
+
 
         // Show/hide config based on provider
         const updateProviderConfig = () => {
@@ -1062,7 +1422,6 @@
             grokConfig.style.display = 'none';
             openrouterConfig.style.display = 'none';
             llamacppConfig.style.display = 'none';
-            ollamaConfig.style.display = 'none';
             if (llmProviderSelect.value === 'gemini') {
                 geminiConfig.style.display = 'flex';
             } else if (llmProviderSelect.value === 'grok') {
@@ -1071,13 +1430,11 @@
                 openrouterConfig.style.display = 'flex';
             } else if (llmProviderSelect.value === 'llamacpp') {
                 llamacppConfig.style.display = 'flex';
-            } else {
-                ollamaConfig.style.display = 'flex';
             }
         };
         updateProviderConfig();
 
-        if (savedApiKey || savedOllamaModel) {
+        if (savedApiKey) {
             apiKeyStatus.textContent = '✓ Saved';
         }
 
@@ -1092,7 +1449,7 @@
             const openrouterApiKey = document.getElementById('openrouter-api-key').value.trim();
             const openrouterModel = document.getElementById('openrouter-model').value.trim();
             const llamacppUrl = document.getElementById('llamacpp-url').value.trim();
-            const ollamaModel = ollamaModelGlobal.value.trim();
+
 
             localStorage.setItem('llm_provider', provider);
             if (apiKey) localStorage.setItem('gemini_api_key', apiKey);
@@ -1100,7 +1457,7 @@
             if (openrouterApiKey) localStorage.setItem('openrouter_api_key', openrouterApiKey);
             if (openrouterModel) localStorage.setItem('openrouter_model', openrouterModel);
             if (llamacppUrl) localStorage.setItem('llamacpp_url', llamacppUrl);
-            if (ollamaModel) localStorage.setItem('ollama_model', ollamaModel);
+
 
             apiKeyStatus.textContent = '✓ Saved';
             setTimeout(() => { apiKeyStatus.textContent = ''; }, 2000);
@@ -1112,235 +1469,120 @@
                 modeTabs.forEach(t => t.classList.remove('active'));
                 tab.classList.add('active');
                 const mode = tab.dataset.mode;
-                if (mode === 'algorithm') {
-                    algorithmMode.classList.remove('hidden');
-                    brainstormMode.classList.remove('active');
-                } else {
-                    algorithmMode.classList.add('hidden');
-                    brainstormMode.classList.add('active');
+                const bs = document.getElementById('brainstorm-mode');
+                const algo = document.getElementById('algorithm-mode');
+                const distil = document.getElementById('distillation-mode');
+
+                [bs, algo, distil].forEach(c => {
+                    if (c) {
+                        c.classList.add('hidden');
+                        c.classList.remove('active');
+                    }
+                });
+
+                if (mode === 'brainstorm') {
+                    if (bs) { bs.classList.remove('hidden'); bs.classList.add('active'); }
+                } else if (mode === 'algorithm') {
+                    if (algo) { algo.classList.remove('hidden'); algo.classList.add('active'); }
+                } else if (mode === 'distillation') {
+                    if (distil) { distil.classList.remove('hidden'); distil.classList.add('active'); }
                 }
             });
         });
 
         // Initialize NodeChat component in the brainstorm container
-        nodeChatInstance = NodeChat.init('node-chat-container', {
-            title: 'Brainstorm',
-            subtitle: 'AI-powered expert panel',
-            placeholder: 'What would you like to brainstorm?',
-            onSend: async (message, chat) => {
-                const provider = localStorage.getItem('llm_provider') || 'gemini';
-                const apiKey = localStorage.getItem('gemini_api_key');
-                const grokApiKey = localStorage.getItem('grok_api_key');
-                const openrouterApiKey = localStorage.getItem('openrouter_api_key');
-                const openrouterModel = localStorage.getItem('openrouter_model') || 'stepfun/step-3.5-flash:free';
-                const llamacppUrl = localStorage.getItem('llamacpp_url') || 'http://localhost:8080/v1/chat/completions';
-                const ollamaModel = localStorage.getItem('ollama_model') || 'dengcao/Qwen3-30B-A3B-Instruct-2507:latest';
-
-                if (provider === 'gemini' && !apiKey) {
-                    alert('Please save your Gemini API key in the settings panel first.');
-                    chat.finishStreaming();
-                    return;
-                }
-                if (provider === 'grok' && !grokApiKey) {
-                    alert('Please save your Grok API key in the settings panel first.');
-                    chat.finishStreaming();
-                    return;
-                }
-                if (provider === 'openrouter' && !openrouterApiKey) {
-                    alert('Please save your OpenRouter API key in the settings panel first.');
-                    chat.finishStreaming();
-                    return;
-                }
-
-                // Sync chat history
-                brainstormChatHistory = chat.getChatHistory();
-
-                logContainer.innerHTML = '';
-                fullLogContent = '';
-
-                // Hide Graph for Brainstorm
-                graphContainer.parentElement.style.display = 'none';
-
-                addLogMessage(`<strong>User:</strong> ${message}`, { isHTML: true, color: '#a0a0ff' });
-
-                // Determine the correct API key for the selected provider
-                let selectedApiKey = apiKey;
-                if (provider === 'grok') selectedApiKey = grokApiKey;
-                if (provider === 'openrouter') selectedApiKey = openrouterApiKey;
-
-                const params = {
-                    prompt: message,
-                    provider: provider,
-                    api_key: selectedApiKey,
-                    ollama_model: ollamaModel,
-                    openrouter_model: openrouterModel,
-                    llamacpp_url: llamacppUrl,
-                    vector_word_size: 2,
-                    prompt_alignment: 1.0,
-                    density: 1.0,
-                    learning_rate: 0.1,
-                    num_epochs: document.getElementById('brainstorm_epochs').value || 2,
-                    debug_mode: document.getElementById('brainstorm_debug_mode').checked ? 'true' : 'false'
-                };
-
-                try {
-                    await runGraph({
-                        params: params,
-                        mode: 'brainstorm',
-                        chat_history: brainstormChatHistory,
-                        document_context: brainstormDocumentContext
-                    }, '/build_and_run_graph', false);
-                    // Note: finishStreaming will be called by the FINAL_ANSWER SSE handler
-                } catch (error) {
-                    addLogMessage(`Error initiating brainstorming: ${error.message}`, { color: 'red' });
-                    chat.removeThinking();
-                    chat.finishStreaming();
-                }
-            },
-            onClear: () => {
-                brainstormChatHistory = [];
-            }
-        });
+        // Ensure container is visible before init if necessary, or just init
+        if (document.getElementById('node-chat-container')) {
+            nodeChatInstance = NodeChat.init('node-chat-container', {
+                title: 'Brainstorm',
+                subtitle: 'AI-powered expert panel',
+                placeholder: 'What would you like to brainstorm?',
+                onSend: async (message, chat) => {
+                    const provider = localStorage.getItem('llm_provider') || 'gemini';
+                    const apiKey = localStorage.getItem('gemini_api_key');
+                    const grokApiKey = localStorage.getItem('grok_api_key');
+                    const openrouterApiKey = localStorage.getItem('openrouter_api_key');
+                    const openrouterModel = localStorage.getItem('openrouter_model') || 'stepfun/step-3.5-flash:free';
+                    const llamacppUrl = localStorage.getItem('llamacpp_url') || 'http://localhost:8080/v1/chat/completions';
 
 
-        const handleDebugCheck = (e) => {
-            const isDebug = debugModeCheckbox.checked || coderDebugModeCheckbox.checked;
-            ollamaModelSection.classList.toggle('hidden', isDebug);
-
-            if (e.target.id === 'debug_mode' && e.target.checked) {
-                coderDebugModeCheckbox.checked = false;
-            } else if (e.target.id === 'coder_debug_mode' && e.target.checked) {
-                debugModeCheckbox.checked = false;
-            }
-        };
-
-        debugModeCheckbox.addEventListener('change', handleDebugCheck);
-        coderDebugModeCheckbox.addEventListener('change', handleDebugCheck);
-
-        const addLogMessage = (text, options = {}) => {
-            fullLogContent += text + '\n';
-            if (downloadLogButton.disabled) {
-                downloadLogButton.disabled = false;
-            }
-            const container = document.createElement('div');
-            container.style.margin = '0';
-            container.style.lineHeight = '1.4';
-
-            if (options.isHTML) {
-                container.innerHTML = text;
-            } else {
-                container.textContent = text;
-            }
-
-            if (options.color) container.style.color = options.color;
-
-            logContainer.appendChild(container);
-            logContainer.scrollTop = logContainer.scrollHeight;
-        };
-
-        const downloadLog = () => {
-            const blob = new Blob([fullLogContent], { type: 'text/plain;charset=utf-8' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-            a.download = `noa-run-log-${timestamp}.txt`;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-        };
-
-        downloadLogButton.addEventListener('click', downloadLog);
-
-        const renderPerplexityChart = () => {
-            if (perplexityChart) {
-                perplexityChart.destroy();
-            }
-            const labels = allLbelsData;
-            const data = allPerplexityValues;
-
-            perplexityChart = new Chart(perplexityChartCanvas, {
-                type: 'line',
-                data: {
-                    labels: labels,
-                    datasets: [{
-                        label: 'Average Agent Perplexity',
-                        data: data,
-                        borderColor: 'rgba(255, 75, 75, 1)',
-                        backgroundColor: 'rgba(255, 75, 75, 0.2)',
-                        fill: true,
-                        tension: 0.1
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    scales: {
-                        y: {
-                            beginAtZero: true,
-                            title: { display: true, text: 'Perplexity Score' }
-                        },
-                        x: {
-                            title: { display: true, text: 'Epoch' }
-                        }
+                    if (provider === 'gemini' && !apiKey) {
+                        alert('Please save your Gemini API key in the settings panel first.');
+                        chat.finishStreaming();
+                        return;
                     }
+                    if (provider === 'grok' && !grokApiKey) {
+                        alert('Please save your Grok API key in the settings panel first.');
+                        chat.finishStreaming();
+                        return;
+                    }
+                    if (provider === 'openrouter' && !openrouterApiKey) {
+                        alert('Please save your OpenRouter API key in the settings panel first.');
+                        chat.finishStreaming();
+                        return;
+                    }
+
+                    // Sync chat history
+                    brainstormChatHistory = chat.getChatHistory();
+
+                    logContainer.innerHTML = '';
+                    fullLogContent = '';
+
+                    // Hide Graph for Brainstorm
+                    graphContainer.parentElement.style.display = 'none';
+
+                    addLogMessage(`<strong>User:</strong> ${message}`, { isHTML: true, color: '#a0a0ff' });
+
+                    // Determine the correct API key for the selected provider
+                    let selectedApiKey = apiKey;
+                    if (provider === 'grok') selectedApiKey = grokApiKey;
+                    if (provider === 'openrouter') selectedApiKey = openrouterApiKey;
+
+                    const params = {
+                        prompt: message,
+                        provider: provider,
+                        api_key: selectedApiKey,
+
+                        openrouter_model: openrouterModel,
+                        llamacpp_url: llamacppUrl,
+                        vector_word_size: 2,
+                        prompt_alignment: 1.0,
+                        density: 1.0,
+                        learning_rate: 0.1,
+                        num_epochs: document.getElementById('brainstorm_epochs').value || 2,
+                        coder_debug_mode: document.getElementById('brainstorm_debug_mode').checked ? 'true' : 'false'
+                    };
+
+                    try {
+                        await runGraph({
+                            params: params,
+                            mode: 'brainstorm',
+                            chat_history: brainstormChatHistory,
+                            document_context: brainstormDocumentContext
+                        }, '/build_and_run_graph', false);
+                        // Note: finishStreaming will be called by the FINAL_ANSWER SSE handler
+                    } catch (error) {
+                        addLogMessage(`Error initiating brainstorming: ${error.message}`, { color: 'red' });
+                        chat.removeThinking();
+                        chat.finishStreaming();
+                    }
+                },
+                onClear: () => {
+                    brainstormChatHistory = [];
                 }
             });
-        };
 
-        const handleChatSubmit = async (e) => {
-            e.preventDefault();
-            const message = chatInput.value.trim();
-            if (!message || !currentSessionId) return;
 
-            const userMsgDiv = document.createElement('div');
-            userMsgDiv.className = 'chat-message user-message';
-            userMsgDiv.textContent = message;
-            chatMessages.appendChild(userMsgDiv);
-            chatMessages.scrollTop = chatMessages.scrollHeight;
 
-            chatInput.value = '';
-            chatInput.disabled = true;
 
-            const aiMsgDiv = document.createElement('div');
-            aiMsgDiv.className = 'chat-message ai-message';
-            aiMsgDiv.textContent = '...';
-            chatMessages.appendChild(aiMsgDiv);
-            chatMessages.scrollTop = chatMessages.scrollHeight;
+            downloadLogButton.addEventListener('click', downloadLog);
 
-            try {
-                const response = await fetch('/chat', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ session_id: currentSessionId, message: message })
-                });
 
-                if (!response.ok) {
-                    const errorText = await response.text();
-                    aiMsgDiv.textContent = `Error: ${errorText}`;
-                    return;
-                }
 
-                const reader = response.body.getReader();
-                const decoder = new TextDecoder();
-                let aiResponseText = '';
-                aiMsgDiv.textContent = '';
 
-                while (true) {
-                    const { value, done } = await reader.read();
-                    if (done) break;
-                    const chunk = decoder.decode(value, { stream: true });
-                    aiResponseText += chunk;
-                    aiMsgDiv.innerHTML = marked.parse(aiResponseText);
-                    chatMessages.scrollTop = chatMessages.scrollHeight;
-                }
-            } catch (error) {
-                aiMsgDiv.textContent = `Error: ${error.message}`;
-            } finally {
-                chatInput.disabled = false;
-                chatInput.focus();
-            }
-        };
+        } // End if node-chat-container exists
+
+
 
         const handleDiagnosticChatSubmit = async (e) => {
             e.preventDefault();
@@ -1395,55 +1637,7 @@
             }
         };
 
-        const handleHarvestClick = async () => {
-            if (!currentSessionId) return;
 
-            harvestButton.disabled = true;
-            chatInput.disabled = true;
-            harvestButton.textContent = 'Harvesting...';
-            addLogMessage(`--- [HARVEST] User initiated final harvest for session ${currentSessionId} ---`, { color: 'yellow' });
-
-            try {
-                const response = await fetch('/harvest', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ session_id: currentSessionId })
-                });
-                const result = await response.json();
-
-                if (!response.ok) {
-                    addLogMessage(`Error during harvest: ${result.message}`, { color: 'red' });
-                    if (result.traceback) {
-                        addLogMessage(result.traceback, { isHTML: false });
-                    }
-                    return;
-                }
-
-                addLogMessage(`<strong>✅ ${result.message}</strong>`, { isHTML: true, color: 'lime' });
-
-                if (result.message === "Harvest complete.") {
-                    addLogMessage(`Report generated successfully. Session ID: ${currentSessionId}`, { color: 'cyan' });
-                    reportContainer.classList.remove('hidden');
-                    downloadReportButton.onclick = () => {
-                        window.location.href = `/download_report/${currentSessionId}`;
-                    };
-                } else {
-                    addLogMessage(`⚠️ Server finished but no downloadable report was generated.`, { color: 'orange' });
-                }
-
-                chatContainer.classList.add('hidden');
-                graphArchitectureSection.classList.remove('hidden');
-                qnnImportContainer.classList.remove('hidden');
-
-            } catch (error) {
-                addLogMessage(`Client-side error during harvest: ${error.message}`, { color: 'red' });
-            } finally {
-                harvestButton.disabled = false;
-                harvestButton.textContent = 'HARVEST';
-                runButton.disabled = false;
-                runButton.textContent = 'Build and Run Graph';
-            }
-        };
 
         function parseJsonFromDataString(inputString) {
             const jsonString = inputString.slice(5, inputString.length);
@@ -1465,10 +1659,8 @@
             }
             graphContainer.innerHTML = '<p>ASCII graph will be displayed here after the process starts...</p>';
 
-            reportContainer.classList.add('hidden');
             codeResultContainer.classList.add('hidden');
             modulesContainer.classList.add('hidden');
-            chatContainer.classList.add('hidden');
             graphArchitectureSection.classList.add('hidden');
             qnnImportContainer.classList.add('hidden');
 
@@ -1499,17 +1691,24 @@
 
                     let codeToDisplay = result.code_solution;
 
-                    const codeMatch = /```(?:python\n)?([\s\S]*?)```/.exec(codeToDisplay);
+                    // Robust regex for varied markdown code block formats
+                    const codeMatch = /```(?:\w+\n)?([\s\S]*?)```/.exec(codeToDisplay);
                     if (codeMatch) {
                         codeToDisplay = codeMatch[1].trim();
+                    } else if (codeToDisplay.includes('def ')) {
+                        // Fallback: if it looks like code but no backticks, keep as is
+                        codeToDisplay = codeToDisplay.trim();
                     }
 
-                    codeToDisplay = codeToDisplay.replace(/\\n/g, '\n').replace(/\\"/g, '"');
+                    try {
+                        codeToDisplay = codeToDisplay.replace(/\\n/g, '\n').replace(/\\"/g, '"');
+                    } catch (e) { }
 
+                    // Visibility first, then content and highlight
+                    codeResultContainer.classList.remove('hidden');
                     codeOutput.textContent = codeToDisplay;
                     Prism.highlightElement(codeOutput);
                     codeReasoning.textContent = result.reasoning;
-                    codeResultContainer.classList.remove('hidden');
                     exportQnnButton.classList.remove('hidden');
 
                     if (result.modules && Array.isArray(result.modules) && result.modules.length > 0) {
@@ -1550,8 +1749,6 @@
                     addLogMessage(`<strong>✅ ${result.message}</strong>`, { isHTML: true, color: 'lime' });
                     currentSessionId = result.session_id;
                     diagnosticChatContainer.classList.add('hidden');
-                    chatContainer.classList.remove('hidden');
-                    chatContainer.focus();
 
                     exportQnnButton.classList.remove('hidden');
                 } else if (result.message === "Graph started.") {
@@ -1587,7 +1784,6 @@
                     params[key] = value;
                 }
             });
-            if (!formData.has('debug_mode')) params.debug_mode = 'false';
             if (!formData.has('coder_debug_mode')) params.coder_debug_mode = 'false';
             if (!params.mbti_archetypes || params.mbti_archetypes.length < 2) {
                 alert('Please select at least 2 MBTI archetypes.');
@@ -1601,17 +1797,17 @@
             const openrouterKey = document.getElementById('openrouter-api-key').value.trim();
             const openrouterMdl = document.getElementById('openrouter-model').value.trim();
             const llamacppServerUrl = document.getElementById('llamacpp-url').value.trim();
-            const ollamaGlobal = document.getElementById('ollama-model-global').value.trim();
+
 
             params.provider = provider;
             if (provider === 'gemini') params.api_key = geminiKey;
             if (provider === 'grok') params.api_key = grokKey;
             if (provider === 'openrouter') params.api_key = openrouterKey;
-            params.ollama_model = ollamaGlobal;
+
             params.openrouter_model = openrouterMdl;
             params.llamacpp_url = llamacppServerUrl;
 
-            runGraph({ params }, '/build_and_run_graph');
+            runGraph({ params, mode: 'algorithm' }, '/build_and_run_graph');
         });
 
         qnnFileInput.addEventListener('change', (e) => {
@@ -1768,8 +1964,44 @@
                         }
                     }
 
-                    // Route FINAL_ANSWER into NodeChat
-                    if (nodeChatInstance) {
+                    console.log("Parsed answer:", answer);
+
+                    // Route FINAL_ANSWER into NodeChat or Code Result
+                    const isAlgorithmResult = answer.mode === 'algorithm' ||
+                        (answer.proposed_solution && answer.reasoning && answer.skills_used && answer.skills_used.includes('code_synthesis'));
+
+                    if (isAlgorithmResult) {
+                        console.log("Routing to Algorithm Code Result");
+                        // Algorithm / Code Result
+                        let codeToDisplay = answer.proposed_solution || "";
+
+                        // Robust regex for varied markdown code block formats
+                        const codeMatch = /```(?:\w+\n)?([\s\S]*?)```/.exec(codeToDisplay);
+                        if (codeMatch) {
+                            codeToDisplay = codeMatch[1].trim();
+                        } else if (codeToDisplay.includes('def ')) {
+                            // Fallback: if it looks like code but no backticks, keep as is
+                            codeToDisplay = codeToDisplay.trim();
+                        }
+
+                        try {
+                            codeToDisplay = codeToDisplay.replace(/\\n/g, '\n').replace(/\\"/g, '"');
+                        } catch (e) { }
+
+                        // Visibility first: remove 'hidden' AND ensure parent container is 'active'
+                        algorithmMode.classList.remove('hidden');
+                        algorithmMode.classList.add('active');
+                        codeResultContainer.classList.remove('hidden');
+
+                        codeOutput.textContent = codeToDisplay;
+                        Prism.highlightElement(codeOutput);
+                        codeReasoning.textContent = answer.reasoning || "Synthesis complete.";
+                        exportQnnButton.classList.remove('hidden');
+                        diagnosticChatContainer.classList.add('hidden');
+
+                        addLogMessage(`<strong>✅ Graph results visualized below.</strong>`, { isHTML: true, color: 'lime' });
+                    } else if (answer.mode === 'brainstorm' || nodeChatInstance) {
+                        // Brainstorm Reflection
                         let displayText = '';
                         if (typeof answer === 'object' && answer !== null) {
                             if (answer.proposed_solution) displayText = answer.proposed_solution;
@@ -1781,10 +2013,13 @@
                         // Prefix with synthesis header
                         displayText = '🧠 **Synthesis**\n\n' + displayText;
 
-                        nodeChatInstance.appendAIMessage(displayText);
-
-                        // Sync chat history back
-                        brainstormChatHistory = nodeChatInstance.getChatHistory();
+                        if (nodeChatInstance) {
+                            nodeChatInstance.appendAIMessage(displayText);
+                            // Sync chat history back
+                            brainstormChatHistory = nodeChatInstance.getChatHistory();
+                        } else {
+                            addLogMessage(displayText, { isHTML: true });
+                        }
                     }
 
                 } catch (e) {
@@ -1808,8 +2043,43 @@
                 addLogMessage(`<strong>✅ Diagnostic chat is now active.</strong>`, { isHTML: true, color: 'lime' });
                 diagInput.placeholder = "Live diagnostic rag-chat is active.";
                 return;
-            } else {
+            } else if ((rawMessage.includes('"type":') || rawMessage.startsWith('{')) && (rawMessage.includes('distillation_update') || rawMessage.includes('distillation_complete'))) {
+                try {
+                    const jsonStr = rawMessage.substring(rawMessage.indexOf('{')).trim();
+                    const data = JSON.parse(jsonStr);
+                    if (data.type === 'distillation_update') {
+                        renderAsciiTopology(data.topology, data.epoch);
+                        updateDistilMetrics(data);
+                        if (data.perplexity !== undefined && typeof updatePerplexityChart === 'function') {
+                            updatePerplexityChart(data.epoch, data.perplexity);
+                        }
+                        appendDistilConsole(`[Epoch ${data.epoch}] Tokens: ${(data.token_count || 0).toLocaleString()} / ${(data.token_budget || 0).toLocaleString()} | Perplexity: ${(data.perplexity || 0).toFixed(1)} | QA: ${data.qa_pairs_count || 0}`, '#0ff');
+                    }
+                    if (data.type === 'distillation_complete') {
+                        appendDistilConsole(`✓ COMPLETE — Epochs: ${data.total_epochs}, Tokens: ${(data.total_tokens || 0).toLocaleString()}, QA Pairs: ${data.qa_pairs_count}`, '#0f0');
+                        // Reset distillation buttons if they are in scope
+                        const distilStartBtn = document.getElementById('distillation-run-button');
+                        const distilStopBtn = document.getElementById('distillation-stop-button');
+                        const distilDownloadBtn = document.getElementById('download-distillation-btn');
+                        if (distilStartBtn) {
+                            distilStartBtn.disabled = false;
+                            distilStartBtn.textContent = "Start Distillation";
+                        }
+                        if (distilStopBtn) distilStopBtn.style.display = 'none';
+                        if (distilDownloadBtn) distilDownloadBtn.style.display = '';
+                    }
+                } catch (e) {
+                    console.error("Error parsing distillation update", e);
+                }
+            } else if (rawMessage.startsWith('DISTILLATION_LOG:')) {
+                const msg = rawMessage.replace('DISTILLATION_LOG:', '').trim();
+                if (typeof appendDistilConsole === 'function') {
+                    appendDistilConsole(msg, '#aaffaa');
+                }
 
+            } else {
+                if (rawMessage.trim().startsWith(':') || rawMessage.includes('keepalive')) return;
+                if (rawMessage.startsWith('DISTILLATION_LOG:')) return;
                 addLogMessage(rawMessage);
             }
 
@@ -1821,16 +2091,7 @@
             eventSource.close();
         };
 
-        chatForm.addEventListener('submit', handleChatSubmit);
         diagnosticChatForm.addEventListener('submit', handleDiagnosticChatSubmit);
-        harvestButton.addEventListener('click', handleHarvestClick);
-
-        chatInput.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                chatForm.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
-            }
-        });
 
         diagnosticChatInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {

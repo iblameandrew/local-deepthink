@@ -6,8 +6,7 @@ import time
 import uvicorn
 from fastapi import FastAPI, Request, Body, File, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
-from langchain_community.chat_models import ChatOllama
-from langchain_community.embeddings import OllamaEmbeddings
+
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langgraph.graph import StateGraph, END, START
@@ -63,8 +62,10 @@ from deepthink.chains import (
     get_brainstorming_synthesis_chain,
     get_brainstorming_seed_chain,
     get_brainstorming_spanner_chain,
-    get_problem_summarizer_chain
+    get_problem_summarizer_chain,
+    get_brainstorming_polisher_chain
 )
+from deepthink.knowledge_distillation import DistillationGraph
 from deepthink.utils import clean_and_parse_json, execute_code_in_sandbox
 
 from langchain_core.callbacks import BaseCallbackHandler, AsyncCallbackHandler
@@ -117,12 +118,25 @@ load_dotenv()
 app = FastAPI(title="DeepThink Local")
 app.mount("/js", StaticFiles(directory="js"), name="js")
 app.mount("/css", StaticFiles(directory="css"), name="css")
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 
 log_stream = asyncio.Queue()
+connected_log_clients = set()
+
+async def broadcast_log(message: str):
+    """Broadcasts a log message to all connected SSE clients."""
+    if connected_log_clients:
+        # Create a list of tasks for parallel putting
+        tasks = [asyncio.create_task(q.put(message)) for q in connected_log_clients]
+        if tasks:
+            await asyncio.wait(tasks, timeout=0.1)
+    # Also put in the main queue for any fallback/legacy listeners (optional)
+    # await log_stream.put(message)
 
 sessions = {}
-final_reports = {} 
+final_reports = {}
+active_distillation_graph = None 
 
 
 class RAPTORRetriever(BaseRetriever):
@@ -282,6 +296,13 @@ You must reply in the following JSON format: "original_problem": "Your sub-probl
                 "attributes": "python fastapi solid",
                 "hard_request": "Implement a quantum-resistant encryption algorithm from scratch."
             })
+        elif "you are a principal software architect" in (prompt.lower()):
+             return json.dumps({
+                "original_problem": "An evolved sub-problem about system architecture.",
+                "proposed_solution": "```python\ndef architected_component():\n    pass\n```",
+                "reasoning": "Designed for scale and reliability.",
+                "skills_used": ["System Design", "Scalability"]
+             })
         elif "you are a 'dense_spanner'" in prompt or "you are an agent evolution specialist" in prompt:
              return f"""
 You are now a Principal Software Architect.
@@ -362,15 +383,8 @@ Generate your code-focused critique for the team:"""
             return json.dumps({"questions": questions})
         elif "you are an ai assistant that summarizes academic texts" in prompt:
             return "This is a mock summary of a cluster of code modules, generated in Coder debug mode for the RAPTOR index."
-        elif "runnable code block (e.g., Python, JavaScript, etc.)." in prompt:
-                
-
-            pick = random.randint(0,1)
-            if pick == 0:
-                return "yes"
-
-            else:
-                return "no"
+        elif "runnable code block (e.g., Python, JavaScript, etc.)." in prompt or "contains any programming code" in prompt or "primarily a request for code" in prompt:
+            return "yes"
        
 
         elif "academic paper" in prompt or "you are a research scientist and academic writer" in prompt:
@@ -464,15 +478,40 @@ def get_user(user_id: int):
 
 
             """
-
-
+        elif "you are a synthesis agent" in prompt:
+            return "```python\ndef synthesized_logic():\n    return 'Unified solution for the original problem.'\n```"
+        elif "analyze the complexity of the following user input/question" in prompt:
+            return json.dumps({
+                "complexity_score": 5,
+                "recommended_layers": 2,
+                "recommended_epochs": 2,
+                "recommended_width": 3,
+                "reasoning": "Mock complexity estimation for debug mode."
+            })
+        elif "you are a concept spanner" in prompt:
+            return "Strategy Ethics Innovation Scalability Implementation"
+        elif "you are a research director" in prompt:
+            return "This is a mock research summary briefing the team on the core problem and document context."
+        elif "you are a qnn node generator" in prompt:
+            return json.dumps({
+                "name": "Mock Expert",
+                "specialty": "General Debugging",
+                "emoji": "🤖",
+                "system_prompt": "You are a mock expert for debugging purposes."
+            })
+        elif "reflect on the input from your specific persona" in prompt:
+            return "As a mock expert, I reflect that this system is functioning correctly in debug mode."
+        elif "you are a master synthesizer of ideas" in prompt:
+            return "The collective reflections suggest that the mock implementation is sufficient for testing."
+        elif "you are a master communicator and storyteller" in prompt:
+            return "### Synthesis of Ideas\n\nOur expert panel has concluded that this mock session is a success. We've explored the conceptual space and converged on a solid debugging foundation."
         else:
-
+            # For synthesis or fallback
             return json.dumps({
                 "original_problem": "A sub-problem statement provided to a coder agent.",
                 "proposed_solution": "```python\ndef sample_function():\n    return 'Hello from coder agent " + str(random.randint(100,999)) + "'\n```",
-                "reasoning": "This response was generated instantly by the CoderMockLLM.",
-                "skills_used": ["python", "mocking", f"api_design_{random.randint(1,5)}"]
+                "reasoning": "The agent followed the instructions to implement the core logic.",
+                "skills_used": ["python", "mocking"]
             })
 
             
@@ -1101,12 +1140,20 @@ def create_synthesis_node(llm):
                 "original_request": synthesis_input_concept,
                 "agent_solutions": agent_reflections,
                 "prior_conversation": prior_conv[:15000],  # Limit to prevent token overflow
-                "document_context": doc_ctx[:50000] # Pass doc context to synthesis
+                "document_context": doc_ctx[:20000] # Limit to prevent token overflow
+             })
+
+             await log_stream.put("LOG: [BRAINSTORM] Polishing synthesis for conversational delivery...")
+             polisher_chain = get_brainstorming_polisher_chain(llm)
+             final_solution_str = await polisher_chain.ainvoke({
+                 "original_request": synthesis_input_concept,
+                 "initial_synthesis": final_solution_str
              })
              
              final_solution = {
                  "proposed_solution": final_solution_str,
-                 "reasoning": "Brainstorm synthesis complete."
+                 "reasoning": "Brainstorm synthesis and polishing complete.",
+                 "mode": "brainstorm"
              }
              await log_stream.put(f"LOG: [DEBUG] Emitting FINAL_ANSWER token to frontend. Solution length: {len(final_solution_str)}")
              await log_stream.put(f"SUCCESS: Brainstorm synthesis complete.")
@@ -1133,10 +1180,16 @@ def create_synthesis_node(llm):
                     final_solution = {
                         "proposed_solution": final_solution_str,
                         "reasoning": "Synthesized multiple agent code outputs into a single application.",
-                        "skills_used": ["code_synthesis"]
+                        "skills_used": ["code_synthesis"],
+                        "mode": "algorithm"
                     }
                 else:
                     final_solution = clean_and_parse_json(final_solution_str)
+                    if isinstance(final_solution, dict):
+                        final_solution["mode"] = "algorithm"
+                    else:
+                        # Fallback if it's just a string
+                        final_solution = {"proposed_solution": str(final_solution), "mode": "algorithm"}
                 await log_stream.put(f"SUCCESS: Synthesis complete.")
             except (json.JSONDecodeError, AttributeError):
                 await log_stream.put(f"ERROR: Could not decode JSON from synthesis chain. Result: {final_solution_str}")
@@ -1237,6 +1290,10 @@ def create_update_rag_index_node(llm, embeddings_model):
         all_rag_documents = state.get("all_rag_documents", [])
         if not all_rag_documents:
             await log_stream.put("WARNING: No documents were archived. Cannot build RAG index.")
+            return {"raptor_index": None}
+
+        if not embeddings_model:
+            await log_stream.put("WARNING: No embeddings model configured. Skipping RAG index build.")
             return {"raptor_index": None}
 
         await log_stream.put(f"LOG: Total documents to index: {len(all_rag_documents)}. Building RAPTOR index...")
@@ -1560,13 +1617,11 @@ async def run_inference_from_state(payload: dict = Body(...)):
         if not imported_state or not user_prompt:
             return JSONResponse(content={"error": "Invalid payload. 'imported_state' and 'prompt' are required."}, status_code=400)
 
-        if params.get("coder_debug_mode") == 'true':
+        is_debug = params.get("coder_debug_mode") == 'true' or params.get("debug_mode") == 'true' or params.get("coder_debug_mode") is True or params.get("debug_mode") is True
+        if is_debug:
             llm = CoderMockLLM()
-        elif params.get("debug_mode") == 'true':
-            llm = MockLLM()
         else:
-            model_name = params.get("ollama_model", "dengcao/Qwen3-3B-A3B-Instruct-2507:latest")
-            llm = ChatOllama(model=model_name, temperature=0.8)
+            return JSONResponse(content={"error": "No valid LLM provider configured."}, status_code=400)
 
         imported_state["original_request"] = user_prompt
         imported_state["current_problem"] = user_prompt
@@ -1674,28 +1729,24 @@ async def build_and_run_graph(payload: dict = Body(...)):
 
     try:
         # Determine Provider
-        provider = params.get("provider", "ollama")
+        provider = params.get("provider", "gemini")
         api_key = params.get("api_key", "")
         
         # Custom Debug Mode Logic (Prioritize Mock LLMs)
-        if params.get("coder_debug_mode") == 'true':
+        is_debug = params.get("coder_debug_mode") == 'true' or params.get("debug_mode") == 'true' or params.get("coder_debug_mode") is True or params.get("debug_mode") is True
+        
+        if is_debug:
             await log_stream.put(f"--- 💻 CODER DEBUG MODE ENABLED 💻 ---")
             llm = CoderMockLLM()
             summarizer_llm = CoderMockLLM()
-            embeddings_model = OllamaEmbeddings(model="mxbai-embed-large:latest")
-            
-        elif params.get("debug_mode") == 'true':
-            await log_stream.put(f"--- 🚀 DEBUG MODE ENABLED 🚀 ---")
-            llm = MockLLM()
-            summarizer_llm = MockLLM()
-            embeddings_model = OllamaEmbeddings(model="mxbai-embed-large:latest")
+            embeddings_model = None  # Will skip RAG in debug mode
 
         elif provider == "gemini":
             if not api_key:
                 return JSONResponse(content={"message": "Gemini API Key required"}, status_code=400)
             llm = ChatGoogleGenerativeAI(model="gemini-3-flash-preview", google_api_key=api_key, temperature=0.7, callbacks=[token_tracker])
             summarizer_llm = llm # Reuse for summary
-            embeddings_model = OllamaEmbeddings(model="mxbai-embed-large:latest") 
+            embeddings_model = None
             await log_stream.put(f"--- Initializing Main Agent LLM: Gemini (gemini-3-flash-preview) ---")
             
         elif provider == "grok":
@@ -1703,7 +1754,7 @@ async def build_and_run_graph(payload: dict = Body(...)):
                 return JSONResponse(content={"message": "Grok API Key required"}, status_code=400)
             llm = ChatXAI(model="grok-4-1-fast", xai_api_key=api_key, temperature=0.7, callbacks=[token_tracker])
             summarizer_llm = llm
-            embeddings_model = OllamaEmbeddings(model="mxbai-embed-large:latest")
+            embeddings_model = None
             await log_stream.put(f"--- Initializing Main Agent LLM: Grok (grok-4.1 fast) ---")
 
         elif provider == "openrouter":
@@ -1718,7 +1769,7 @@ async def build_and_run_graph(payload: dict = Body(...)):
                 callbacks=[token_tracker]
             )
             summarizer_llm = llm
-            embeddings_model = OllamaEmbeddings(model="mxbai-embed-large:latest")
+            embeddings_model = None
             await log_stream.put(f"--- Initializing Main Agent LLM: OpenRouter ({openrouter_model}) ---")
 
         elif provider == "llamacpp":
@@ -1729,19 +1780,11 @@ async def build_and_run_graph(payload: dict = Body(...)):
                 max_tokens=4096,
             )
             summarizer_llm = llm
-            embeddings_model = OllamaEmbeddings(model="mxbai-embed-large:latest")
+            embeddings_model = None
             await log_stream.put(f"--- Initializing Main Agent LLM: LlamaCpp Server ({llamacpp_url}) ---")
 
         else:
-            # Default Ollama
-            summarizer_llm = ChatOllama(model="qwen3:1.7b", temperature=0, callbacks=[token_tracker])
-            embeddings_model = OllamaEmbeddings(model="mxbai-embed-large:latest")
-            model_name = params.get("ollama_model", "dengcao/Qwen3-3B-A3B-Instruct-2507:latest")
-            await log_stream.put(f"--- Initializing Main Agent LLM: Ollama ({model_name}) ---")
-
-            llm = ChatOllama(model=model_name, temperature=0.4, callbacks=[token_tracker])
-            await llm.ainvoke("Hi")
-            await log_stream.put("--- Main Agent LLM Connection Successful ---")
+            return JSONResponse(content={"message": "Invalid provider. Please select gemini, grok, openrouter, or llamacpp."}, status_code=400)
 
     except Exception as e:
         error_message = f"Failed to initialize LLM: {e}. Please ensure the selected provider is configured correctly."
@@ -1749,8 +1792,20 @@ async def build_and_run_graph(payload: dict = Body(...)):
         return JSONResponse(content={"message": error_message, "traceback": traceback.format_exc()}, status_code=500)
     
     user_prompt = params.get("prompt")
-    code_detection_chain = get_code_detector_chain(llm)
-    is_code = (await code_detection_chain.ainvoke({"text": user_prompt})).strip().lower() == 'true'
+    detected_is_code = False
+    
+    # Only perform code detection if not in brainstorm mode
+    if mode != "brainstorm":
+        try:
+            request_is_code_chain = get_request_is_code_chain(llm)
+            detected_is_code = (await request_is_code_chain.ainvoke({"request": user_prompt})).strip().lower() == 'yes'
+        except Exception as e:
+            await log_stream.put(f"WARNING: Code detection LLM call failed: {e}. Defaulting to non-code path.")
+            detected_is_code = False
+
+    # Check if user explicitly requested coder debug mode
+    coder_debug_param = params.get("coder_debug_mode")
+    is_code = detected_is_code or (coder_debug_param == "true" or coder_debug_param is True)
     
     if mode == "brainstorm":
         is_code = False # Force false for brainstorming
@@ -1764,112 +1819,105 @@ async def build_and_run_graph(payload: dict = Body(...)):
     
     try:
         if mode == "brainstorm":
-            # BRAINSTORM MODE SETUP (Dynamic Spanning)
-            await log_stream.put("--- [BRAINSTORM] Analyzing Complexity & Spanning Concept Space ---")
-            
-            # Extract chat history and document context from payload
-            chat_history = payload.get("chat_history", [])
-            document_context = payload.get("document_context", "")
-            
-            # Format chat history as string for context
-            chat_history_str = ""
-            if chat_history:
-                chat_history_str = "\n".join([
-                    f"{'User' if msg.get('role') == 'user' else 'Assistant'}: {msg.get('content', '')}"
-                    for msg in chat_history
-                ])
-                await log_stream.put(f"LOG: Chat history contains {len(chat_history)} messages.")
-            
-            if document_context:
-                await log_stream.put(f"LOG: Document context provided ({len(document_context)} characters).")
-            
-            # 1. Complexity Estimation
-            complexity_chain = get_complexity_estimator_chain(llm)
-            complexity_result_str = await complexity_chain.ainvoke({
-                "user_input": user_prompt,
-                "prior_conversation": chat_history_str,
-                "document_context": document_context[:10000] if document_context else ""  # Truncate for estimation
-            })
-
-            # --- Problem Summarization (if documents are present) ---
-            brainstorm_problem_summary = ""
-            if document_context:
-                await log_stream.put("LOG: [BRAINSTORM] Summarizing problem and documents for agent context...")
-                summarizer_chain = get_problem_summarizer_chain(llm) # Use main LLM for summarization
-                brainstorm_problem_summary = await summarizer_chain.ainvoke({
-                    "user_input": user_prompt,
-                    "document_context": document_context[:50000] # Limit for summarization context window
-                })
-                # await log_stream.put(f"LOG: [BRAINSTORM] Summary generated.")
-
-
-            width = 3 # Default
-            
             try:
-                complexity_data = clean_and_parse_json(complexity_result_str)
-                # User determines epochs (default 2), Complexity determines Topology
-                if 'num_epochs' not in params:
-                     params['num_epochs'] = 2
-                else:
-                     params['num_epochs'] = int(params['num_epochs'])
-                     
-                cot_trace_depth = int(complexity_data.get("recommended_layers", 2))
-                width = int(complexity_data.get("recommended_width", 3))
+                # BRAINSTORM MODE SETUP (Dynamic Spanning)
+                await log_stream.put("--- [BRAINSTORM] Analyzing Complexity & Spanning Concept Space ---")
                 
-                await log_stream.put(f"LOG: Topology: {cot_trace_depth} Layers x {width} Width x {params['num_epochs']} Epochs.")
-            except Exception as e:
-                await log_stream.put(f"WARNING: Complexity estimation failed. Using defaults. Error: {e}")
-                if 'num_epochs' not in params: params['num_epochs'] = 2
-                else: params['num_epochs'] = int(params['num_epochs'])
-                cot_trace_depth = 2
-                width = 3
+                # Extract chat history and document context from payload
+                chat_history = payload.get("chat_history", [])
+                document_context = payload.get("document_context", "")
+                
+                # Format chat history as string for context
+                chat_history_str = ""
+                if chat_history:
+                    chat_history_str = "\n".join([
+                        f"{'User' if msg.get('role') == 'user' else 'Assistant'}: {msg.get('content', '')}"
+                        for msg in chat_history
+                    ])
+                
+                if document_context:
+                    await log_stream.put(f"LOG: Document context provided ({len(document_context)} characters).")
+                
+                # 1. Complexity Estimation
+                complexity_chain = get_complexity_estimator_chain(llm)
+                complexity_result_str = await complexity_chain.ainvoke({
+                    "user_input": user_prompt,
+                    "prior_conversation": chat_history_str,
+                    "document_context": document_context[:10000] if document_context else ""  # Truncate for estimation
+                })
 
-            # 2. Seed Generation (Guiding Concepts)
-            # Generate distinct concepts to span the problem space
-            seed_chain = get_brainstorming_seed_chain(llm)
-            concepts_str = await seed_chain.ainvoke({"problem": user_prompt, "num_concepts": width})
-            guiding_concepts = [c.strip() for c in concepts_str.split() if c.strip()]
-            
-            # Ensure we have enough concepts
-            while len(guiding_concepts) < width:
-                guiding_concepts.append("General_Analysis")
-            guiding_concepts = guiding_concepts[:width]
-            
-            await log_stream.put(f"LOG: Guiding Concepts: {', '.join(guiding_concepts)}")
-
-            # 3. Dynamic Spanning (Persona Generation)
-            spanner_chain = get_brainstorming_spanner_chain(llm)
-            
-            for i in range(cot_trace_depth):
-                layer_prompts = []
-                for j in range(width):
-                    agent_id = f"agent_{i}_{j}"
-                    concept = guiding_concepts[j % len(guiding_concepts)]
-                    
-                    # Generate Unique Node Persona
-                    # await log_stream.put(f"LOG: Generating Persona for Layer {i}, Node {j} (Focus: {concept})...") 
-                    # Commented out verbose logging to reduce noise, but process is happening
-                    
-                    persona_str = await spanner_chain.ainvoke({
-                        "problem": user_prompt,
-                        "guiding_concept": concept,
-                        "layer_index": i, 
-                        "node_index": j,
-                        "document_context": document_context[:5000] if document_context else ""  # Truncate for persona generation
+                # --- Problem Summarization (if documents are present) ---
+                brainstorm_problem_summary = ""
+                if document_context:
+                    summarizer_chain = get_problem_summarizer_chain(llm) # Use main LLM for summarization
+                    brainstorm_problem_summary = await summarizer_chain.ainvoke({
+                        "user_input": user_prompt,
+                        "document_context": document_context[:50000] # Limit for summarization context window
                     })
+
+                width = 3 # Default
+                try:
+                    complexity_data = clean_and_parse_json(complexity_result_str)
+                    # User determines epochs (default 2), Complexity determines Topology
+                    if 'num_epochs' not in params:
+                         params['num_epochs'] = 2
+                    else:
+                         params['num_epochs'] = int(params['num_epochs'])
+                         
+                    cot_trace_depth = int(complexity_data.get("recommended_layers", 2))
+                    width = int(complexity_data.get("recommended_width", 3))
                     
-                    try:
-                        persona = clean_and_parse_json(persona_str)
-                    except:
-                        # Fallback
-                        persona = {
-                            "name": f"Expert {i}-{j}", 
-                            "specialty": f"{concept} Specialist" if concept != "General_Analysis" else "Analyst", 
-                            "emoji": "🧠",
-                            "system_prompt": f"You are an expert in {concept}. Analyze the topic: {user_prompt}."
-                        }
+                    await log_stream.put(f"LOG: Topology: {cot_trace_depth} Layers x {width} Width x {params['num_epochs']} Epochs.")
+                except Exception as e:
+                    await log_stream.put(f"WARNING: Complexity estimation failed. Using defaults. Error: {e}")
+                    if 'num_epochs' not in params: params['num_epochs'] = 2
+                    else: params['num_epochs'] = int(params['num_epochs'])
+                    cot_trace_depth = 2
+                    width = 3
+
+                # 2. Seed Generation (Guiding Concepts)
+                # Generate distinct concepts to span the problem space
+                seed_chain = get_brainstorming_seed_chain(llm)
+                concepts_str = await seed_chain.ainvoke({"problem": user_prompt, "num_concepts": width})
+                guiding_concepts = [c.strip() for c in concepts_str.split() if c.strip()]
+                
+                # Ensure we have enough concepts
+                while len(guiding_concepts) < width:
+                    guiding_concepts.append("General_Analysis")
+                guiding_concepts = guiding_concepts[:width]
+                
+                await log_stream.put(f"LOG: Guiding Concepts: {', '.join(guiding_concepts)}")
+
+                # 3. Dynamic Spanning (Persona Generation)
+                spanner_chain = get_brainstorming_spanner_chain(llm)
+                
+                for i in range(cot_trace_depth):
+                    layer_prompts = []
+                    layer_tasks = []
+                    for j in range(width):
+                        layer_tasks.append(spanner_chain.ainvoke({
+                            "problem": user_prompt,
+                            "guiding_concept": guiding_concepts[j],
+                            "layer_index": i,
+                            "node_index": j,
+                            "document_context": brainstorm_problem_summary
+                        }))
                     
-                    system_prompt = f"""
+                    personas_raw = await asyncio.gather(*layer_tasks)
+                    
+                    for j, p_str in enumerate(personas_raw):
+                        agent_id = f"agent_{i}_{j}"
+                        try:
+                            persona = clean_and_parse_json(p_str)
+                        except:
+                            persona = {
+                                "name": f"Expert {i}-{j}", 
+                                "specialty": f"{guiding_concepts[j]} Specialist", 
+                                "emoji": "🧠",
+                                "system_prompt": f"You are an expert in {guiding_concepts[j]}. Analyze the topic: {user_prompt}."
+                            }
+                        
+                        system_prompt = f"""
 You are {persona.get('name', 'Expert')} {persona.get('emoji', '🧠')}.
 Your Specialty is: {persona.get('specialty', 'Analysis')}.
 
@@ -1877,19 +1925,33 @@ Your Specialty is: {persona.get('specialty', 'Analysis')}.
 {persona.get('system_prompt', 'Analyze the input.')}
 </Role>
 """
-                    layer_prompts.append(system_prompt)
+                        layer_prompts.append(system_prompt)
+                        
+                        # Persist metadata
+                        agent_personas[agent_id] = {
+                            "name": persona.get('name', f"Agent {i}-{j}"),
+                            "mbti_type": "Expert", 
+                            "specialty": persona.get('specialty', 'Analysis')
+                        }
+                        decomposed_problems_map[agent_id] = user_prompt 
                     
-                    # Persist metadata
-                    agent_personas[agent_id] = {
-                        "name": persona.get('name', f"Agent {i}-{j}"),
-                        "mbti_type": "Expert", 
-                        "specialty": persona.get('specialty', 'Analysis')
-                    }
-                    decomposed_problems_map[agent_id] = user_prompt 
+                    all_layers_prompts.append(layer_prompts)
                 
-                all_layers_prompts.append(layer_prompts)
-            
-            await log_stream.put(f"LOG: Successfully generated {len(all_layers_prompts) * width} unique expert personas.")
+                await log_stream.put(f"LOG: Successfully generated {len(all_layers_prompts) * width} unique expert personas.")
+
+            except Exception as e:
+                await log_stream.put(f"ERROR: Error during brainstorming graph setup: {e}")
+                await log_stream.put(traceback.format_exc())
+                # Fallback to a minimal setup so the graph can at least run
+                await log_stream.put("LOG: Falling back to minimal brainstorming topology.")
+                params['num_epochs'] = 1
+                width = 3
+                guiding_concepts = ["General_Analysis"] * 3
+                all_layers_prompts = [[f"You are a generic brainstorming agent. Analyze the topic: {user_prompt}"] * 3]
+                for j in range(3):
+                    agent_id = f"agent_0_{j}"
+                    agent_personas[agent_id] = {"name": f"Expert {j}", "mbti_type": "Expert", "specialty": "Generalist"}
+                    decomposed_problems_map[agent_id] = user_prompt
 
                 
         else:
@@ -2097,22 +2159,40 @@ Your Specialty is: {persona.get('specialty', 'Analysis')}.
 
 async def run_graph_background(graph, initial_state):
     session_id = initial_state["session_id"]
+    mode = initial_state.get("mode", "algorithm")
     try:
-         async for output in graph.astream(initial_state, {'recursion_limit': 100}):
+        async for output in graph.astream(initial_state, {'recursion_limit': 100}):
             for node_name, node_output in output.items():
                 if node_output:
-                     # Update session state
-                     current = sessions[session_id]
-                     for k,v in node_output.items():
-                         if isinstance(current.get(k), dict) and isinstance(v, dict):
-                             current[k].update(v)
-                         elif isinstance(current.get(k), list) and isinstance(v, list):
-                             current[k].extend(v)
-                         else:
-                             current[k] = v
-                     sessions[session_id] = current
+                    # Update session state
+                    current = sessions[session_id]
+                    for k,v in node_output.items():
+                        if isinstance(current.get(k), dict) and isinstance(v, dict):
+                            current[k].update(v)
+                        elif isinstance(current.get(k), list) and isinstance(v, list):
+                            current[k].extend(v)
+                        else:
+                            current[k] = v
+                    sessions[session_id] = current
+        
+        # Final result processing after the graph ends
+        final_state = sessions[session_id]
+        if mode == "algorithm":
+            final_solution = final_state.get("final_solution")
+            if final_solution:
+                await log_stream.put(f"LOG: [DEBUG] Emitting FINAL_ANSWER for algorithm mode. Type: {type(final_solution)}")
+                await log_stream.put(f"FINAL_ANSWER: {json.dumps(final_solution)}")
+                await log_stream.put("SUCCESS: Algorithm graph execution completed.")
+            else:
+                await log_stream.put("WARNING: Algorithm graph completed but no final_solution was found in state.")
+        elif mode == "brainstorm":
+             # Brainstorm mode already emits FINAL_ANSWER from the synthesis node itself,
+             # but we log completion here for the server console.
+             await log_stream.put("SUCCESS: Brainstorm graph execution completed.")
+
     except Exception as e:
         await log_stream.put(f"Graph Background Error: {e}")
+        await log_stream.put(traceback.format_exc())
 
 @app.get("/export_qnn/{session_id}")
 async def export_qnn(session_id: str):
@@ -2400,22 +2480,30 @@ async def harvest_session(payload: dict = Body(...)):
 
 @app.get('/stream_log')
 async def stream_log(request: Request):
-
+    client_queue = asyncio.Queue()
+    connected_log_clients.add(client_queue)
+    
     async def event_generator():
-        while True:
-            if await request.is_disconnected():
-                print("Client disconnected from log stream.")
-                break
-            try:
-                log_message = await asyncio.wait_for(log_stream.get(), timeout=1.0)
-                yield f"data: {log_message}\n\n"
-            except asyncio.TimeoutError:
-                continue
-            except Exception as e:
-                print(f"Error in stream: {e}")
-                break
-
+        try:
+            while True:
+                if await request.is_disconnected():
+                    break
+                try:
+                    # Wait for a message with a heartbeat timeout
+                    log = await asyncio.wait_for(client_queue.get(), timeout=15.0)
+                    yield f"data: {log}\n\n"
+                except asyncio.TimeoutError:
+                    yield ": heartbeat\n\n"
+        finally:
+            connected_log_clients.remove(client_queue)
+            
     return EventSourceResponse(event_generator())
+
+
+@app.get("/log_stream")
+async def stream_logs_legacy(request: Request):
+    """Legacy endpoint redirecting to the new broadcast stream."""
+    return await stream_log(request)
 
 
 @app.get("/download_report/{session_id}")
@@ -2442,6 +2530,186 @@ async def download_report(session_id: str):
         headers={"Content-Disposition": f"attachment; filename=NOA_Report_{session_id}.zip"}
     )
 
+
+@app.post("/start_distillation")
+async def start_distillation(payload: dict = Body(...)):
+    global active_distillation_graph
+
+    topics_str = payload.get("topics", "")
+    topics_list = [t.strip() for t in topics_str.split(",") if t.strip()]
+    anchor_question = payload.get("anchor_question", "")
+    token_budget = payload.get("token_budget", 1_000_000)
+    debug_mode = payload.get("debug_mode", False)
+
+    # Read provider settings (same pattern as build_and_run_graph)
+    provider = payload.get("provider", "gemini")
+    api_key = payload.get("api_key", "")
+
+    await log_stream.put(f"--- ⚗️ DISTILLATION: Initializing (provider: {provider}, debug: {debug_mode}) ---")
+
+    try:
+        if provider == "gemini":
+            if not api_key:
+                return JSONResponse(content={"message": "Gemini API Key required"}, status_code=400)
+            llm = ChatGoogleGenerativeAI(model="gemini-3-flash-preview", google_api_key=api_key, temperature=0.7)
+            await log_stream.put("--- Distillation LLM: Gemini ---")
+        elif provider == "grok":
+            if not api_key:
+                return JSONResponse(content={"message": "Grok API Key required"}, status_code=400)
+            llm = ChatXAI(model="grok-4-1-fast", xai_api_key=api_key, temperature=0.7)
+            await log_stream.put("--- Distillation LLM: Grok ---")
+        elif provider == "openrouter":
+            if not api_key:
+                return JSONResponse(content={"message": "OpenRouter API Key required"}, status_code=400)
+            openrouter_model = payload.get("openrouter_model", "stepfun/step-3.5-flash:free")
+            llm = ChatOpenAI(
+                model=openrouter_model,
+                openai_api_key=api_key,
+                openai_api_base="https://openrouter.ai/api/v1",
+                temperature=0.7,
+            )
+            await log_stream.put(f"--- Distillation LLM: OpenRouter ({openrouter_model}) ---")
+        elif provider == "llamacpp":
+            llamacpp_url = payload.get("llamacpp_url", "http://localhost:8080/v1/chat/completions")
+            llm = ChatLlamaCpp(server_url=llamacpp_url, temperature=0.7, max_tokens=4096)
+            await log_stream.put(f"--- Distillation LLM: LlamaCpp ({llamacpp_url}) ---")
+        else:
+            return JSONResponse(content={"message": "Invalid provider. Please select gemini, grok, openrouter, or llamacpp."}, status_code=400)
+    except Exception as e:
+        await log_stream.put(f"Distillation LLM Init Error: {e}")
+        return JSONResponse(content={"message": f"Failed to initialize LLM: {e}"}, status_code=500)
+
+    active_distillation_graph = DistillationGraph(
+        llm=llm,
+        topics=topics_list,
+        anchor_question=anchor_question,
+        token_budget=token_budget,
+        debug_mode=debug_mode,
+    )
+
+    asyncio.create_task(run_distillation_loop())
+
+    return {"status": "started", "message": "Knowledge Distillation started."}
+
+
+async def run_distillation_loop():
+    """Background loop that runs epochs until budget exhausted or stopped."""
+    global active_distillation_graph
+    if not active_distillation_graph:
+        return
+
+    while True:
+        try:
+            should_continue = await active_distillation_graph.run_epoch()
+
+            # Broadcast structured update to SSE
+            data = {
+                "type": "distillation_update",
+                "epoch": active_distillation_graph.epochs_run,
+                "topology": [
+                    [a.to_dict() for a in layer]
+                    for layer in active_distillation_graph.layers
+                ],
+                "token_count": active_distillation_graph.total_tokens,
+                "input_tokens": active_distillation_graph.total_input_tokens,
+                "output_tokens": active_distillation_graph.total_output_tokens,
+                "token_budget": active_distillation_graph.token_budget,
+                "perplexity": active_distillation_graph._compute_perplexity_heuristic(),
+                "qa_pairs_count": len(active_distillation_graph.distilled_data),
+                "dataset_file": active_distillation_graph.dataset_path,
+            }
+            await log_stream.put(json.dumps(data))
+
+            if not should_continue:
+                await log_stream.put(json.dumps({
+                    "type": "distillation_complete",
+                    "total_epochs": active_distillation_graph.epochs_run,
+                    "total_tokens": active_distillation_graph.total_tokens,
+                    "qa_pairs_count": len(active_distillation_graph.distilled_data),
+                    "dataset_file": active_distillation_graph.dataset_path,
+                }))
+                break
+
+        except Exception as e:
+            await log_stream.put(f"Distillation Error: {e}")
+            import traceback
+            await log_stream.put(traceback.format_exc())
+            break
+
+
+@app.post("/stop_distillation")
+async def stop_distillation():
+    """Gracefully stop a running distillation."""
+    global active_distillation_graph
+    if not active_distillation_graph:
+        return JSONResponse(status_code=404, content={"message": "No active distillation."})
+    active_distillation_graph.is_running = False
+    await log_stream.put("--- ⚗️ Distillation stop requested. Will halt after current epoch. ---")
+    return {"status": "stopping", "message": "Distillation will stop after current epoch."}
+
+
+@app.get("/distillation_data")
+async def get_distillation_data():
+    """Return the current distilled dataset and metrics."""
+    global active_distillation_graph
+    if not active_distillation_graph:
+        return JSONResponse(status_code=404, content={"message": "No active distillation."})
+
+    return JSONResponse(content={
+        "distilled_data": active_distillation_graph.distilled_data,
+        "final_answer": active_distillation_graph.final_answer[:5000],
+        "epochs_run": active_distillation_graph.epochs_run,
+        "total_tokens": active_distillation_graph.total_tokens,
+        "input_tokens": active_distillation_graph.total_input_tokens,
+        "output_tokens": active_distillation_graph.total_output_tokens,
+        "token_budget": active_distillation_graph.token_budget,
+        "is_running": active_distillation_graph.is_running,
+        "qa_pairs_count": len(active_distillation_graph.distilled_data),
+    })
+
+
+@app.get("/download_distillation")
+async def download_distillation():
+    """Download the distilled dataset as a JSON file."""
+    global active_distillation_graph
+    if not active_distillation_graph:
+        return JSONResponse(status_code=404, content={"message": "No active distillation."})
+
+    dataset = {
+        "anchor_question": active_distillation_graph.anchor_question,
+        "topics": active_distillation_graph.topics,
+        "total_epochs": active_distillation_graph.epochs_run,
+        "total_input_tokens": active_distillation_graph.total_input_tokens,
+        "total_output_tokens": active_distillation_graph.total_output_tokens,
+        "total_tokens": active_distillation_graph.total_tokens,
+        "qa_pairs": active_distillation_graph.distilled_data,
+        "topology_archive": active_distillation_graph.topology_archive,
+    }
+
+    json_content = json.dumps(dataset, indent=2, ensure_ascii=False)
+
+    return StreamingResponse(
+        iter([json_content]),
+        media_type="application/json",
+        headers={"Content-Disposition": "attachment; filename=distilled_dataset.json"},
+    )
+
+
+
+@app.on_event("startup")
+async def startup_event():
+    asyncio.create_task(log_broadcaster_worker())
+
+async def log_broadcaster_worker():
+    """Continuously pipes messages from the legacy log_stream queue to all broadcast clients."""
+    while True:
+        try:
+            msg = await log_stream.get()
+            await broadcast_log(msg)
+        except Exception as e:
+            # Prevent the worker from dying on unexpected errors
+            pass
+            await asyncio.sleep(1)
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)

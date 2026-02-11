@@ -306,3 +306,34 @@ Create a concise "Problem Usage Summary" (1-2 paragraphs).
 Problem Usage Summary:
 """)
     return prompt | llm | StrOutputParser()
+def get_brainstorming_polisher_chain(llm):
+    """
+    Takes the initial brainstorming synthesis and formats it into a nice, 
+    conversational, and extensive final answer.
+    """
+    prompt = ChatPromptTemplate.from_template("""
+You are a master communicator and storyteller.
+You have been given a technical or conceptual synthesis of ideas generated during a brainstorming session with multiple expert agents.
+
+Original User Request:
+---
+{original_request}
+---
+
+Initial Technical Synthesis:
+---
+{initial_synthesis}
+---
+
+Your Task:
+Transform this technical synthesis into a highly conversational, extensive, and engaging final response for the user.
+1. Use a warm, professional, and slightly visionary tone.
+2. Structure the answer into logically flowing sections with descriptive headings.
+3. Elaborate on the "why" and "how" of the proposed solution.
+4. Ensure the response feels complete and provides a clear narrative arc from the user's initial question to the proposed outcome.
+5. Use markdown for beautiful formatting (bold, lists, headers).
+6. Do not lose the technical precision, but wrap it in a conversational layer that makes it accessible and inspiring.
+
+Final Conversational Answer:
+""")
+    return prompt | llm | StrOutputParser()

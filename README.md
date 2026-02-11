@@ -36,6 +36,36 @@ A streamlined, chat-based interface designed for deep concept exploration and id
 *   **Synthesis**: The final output is a comprehensive, synthesized answer that represents the collective intelligence of the agent panel.
 *   **Chat Interface**: Interact with the collective mind in a natural, chat-like environment.
 
+### 3. ⚗️ Knowledge Distillation Mode (New!)
+A graph of 12 specialized agents mines and exhausts all possible knowledge from a set of topics — producing a structured QA dataset.
+
+**How It Works:**
+
+1.  **Input**: The user provides a list of topics, an **anchor question** (the grand objective), and a **token budget** (how much computation to spend).
+
+2.  **Topology**: 12 agents are spawned in a QNN with structure **1×2×2×2×2×2×1** (7 layers, no synthesis or activation nodes). Each agent has a unique personality archetype — The Initiator, The Builder, The Connector, The Preserver, The Performer, The Analyst, The Diplomat, The Transformer, The Explorer, The Architect, The Visionary, and The Dreamer — each with distinct cognitive attributes and skills.
+
+3.  **Task Master**: On each epoch, the Task Master analyzes the topics and decomposes the anchor question into 12 distinct sub-questions, each assigned to an agent based on cognitive fit.
+
+4.  **Feed-Forward Pass**: The anchor question is fed through the topology. Each agent processes its sub-question within the context of the global anchor as the "grand objective." Agent outputs from one layer feed into the next as context, building a chain of increasingly refined analysis.
+
+5.  **Mirror Descent**: After the forward pass, a Mirror Descent agent evaluates each question-agent pair. Based on the agent's attributes and the quality of its answer, each question is classified as **Easy** or **Hard** for that agent:
+    *   **Easy**: The agent retains its identity and will receive a new question next epoch.
+    *   **Hard**: The Mirror Descent agent searches the *current grid* for the agent with the most resonance to help. A **Mixing Agent** then spawns a new "child" agent by combining the attributes of both "parent" agents. The struggling agent is replaced by this child, which inherits its parent's **context memory** (capped at 100k tokens). The child keeps the same hard question for the next epoch.
+
+6.  **Seed Creator**: After each epoch, a Seed Creator agent analyzes the collective answers and the current topics, then generates 12 ontologically close new topics that guide the next round of inquiry. A followup chain then generates new questions for agents that had an "easy" time.
+
+7.  **Evolution Loop**: The cycle of forward propagation and mirror descent continues indefinitely until the user's token budget is exhausted. The system tracks all input and output tokens across every chain call.
+
+8.  **Output**: The main product is a **JSON dataset** of every sub-question-answer pair that each agent produces, updated in real-time. All topologies with their system prompts, contexts, and sub-questions are archived. When the budget is exhausted, a download becomes available.
+
+**UI Features:**
+*   **ASCII Topology Panel**: Live visualization of the 1×2×2×2×2×2×1 graph structure showing each agent's archetype, difficulty status, and inheritance.
+*   **Distillation Console**: Real-time streaming log of all distillation activity.
+*   **Token Progress Bar**: Visual tracker of token usage vs. budget with epoch and QA pair counters.
+*   **Perplexity Tracker**: A diversity metric showing the ratio of "Hard" vs "Easy" agents — higher values indicate more exploration, lower values indicate convergence.
+*   **Download**: Export the complete distilled dataset including topology archive.
+
 ## Use Case: Advanced Algorithm Generation
 The **Qualitative Neural Network (QNN)** algorithm that powers this system is great for complex problems where the only clue you have is a vague question or a high-level conceptual goal. With the system now refocused exclusively on code and algorithm generation, its primary use case is to tackle difficult programming challenges.
 

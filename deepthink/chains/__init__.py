@@ -38,6 +38,16 @@ from .brainstorm_chains import (
     get_brainstorming_seed_chain,
     get_brainstorming_spanner_chain,
     get_problem_summarizer_chain,
+    get_brainstorming_polisher_chain,
+)
+
+from .distillation_chains import (
+    get_task_master_chain,
+    get_seed_creator_chain,
+    get_mirror_descent_chain,
+    get_mixing_chain,
+    get_followup_question_chain,
+    DISTILLATION_ARCHETYPES,
 )
 
 __all__ = [
@@ -70,5 +80,13 @@ __all__ = [
     'get_brainstorming_seed_chain',
     'get_brainstorming_spanner_chain',
     'get_problem_summarizer_chain',
+    'get_brainstorming_polisher_chain',
+    # Distillation chains
+    'get_task_master_chain',
+    'get_seed_creator_chain',
+    'get_mirror_descent_chain',
+    'get_mixing_chain',
+    'get_followup_question_chain',
+    'DISTILLATION_ARCHETYPES',
 ]
 
