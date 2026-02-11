@@ -80,7 +80,8 @@ class DistillationGraph:
 
     def __init__(self, llm, topics: List[str], anchor_question: str,
                  token_budget: int = 1_000_000, debug_mode: bool = False,
-                 output_dir: str = "distillation_output"):
+                 output_dir: str = "distillation_output",
+                 log_queue: asyncio.Queue = None):
         self.llm = llm
         self.topics = topics
         self.anchor_question = anchor_question
@@ -97,8 +98,9 @@ class DistillationGraph:
         self.layers: List[List[DistillationAgent]] = []
         self.distilled_data: List[dict] = []  # QA pairs — the main product
         self.topology_archive: List[dict] = []  # Snapshot per epoch
-        self.log_queue = asyncio.Queue()
+        self.log_queue = log_queue if log_queue is not None else asyncio.Queue()
         self.final_answer = ""
+        self.last_perplexity = 0.0
 
         # Real-time output file
         self.output_dir = output_dir
@@ -214,27 +216,34 @@ class DistillationGraph:
         except Exception as e:
             logger.warning(f"Failed to write dataset: {e}")
 
-    # ------------------------------------------------------------------
-    # PERPLEXITY HEURISTIC
-    # ------------------------------------------------------------------
-
-    def _compute_perplexity_heuristic(self) -> float:
+    async def _compute_perplexity(self) -> float:
         """
-        Compute a perplexity-like diversity score for the current epoch.
-        Higher = more agents struggling (more exploration happening).
-        Lower = agents handling questions well (convergence).
+        Compute an LLM-based perplexity/quality score for the current distilled data.
+        Returns a score from 1-100 (1=Best/Low Perplexity, 100=Worst/High Perplexity).
         """
-        flat = self._flat_agents()
-        if not flat:
+        if not self.distilled_data:
             return 0.0
-        hard_count = sum(
-            1 for a in flat
-            if a.difficulty_history and a.difficulty_history[-1] == "Hard"
-        )
-        # Ratio of hard agents = exploration pressure
-        # Scale to a "perplexity-like" range for visualization
-        ratio = hard_count / len(flat)
-        return round(ratio * 100, 2)  # 0-100 scale
+
+        # Sample up to 5 QA pairs for evaluation
+        sample_size = min(5, len(self.distilled_data))
+        # Get the most recent ones
+        sample = self.distilled_data[-sample_size:]
+
+        await self.log_queue.put("DISTILLATION_LOG: 📉 Calculating perplexity on recent QA pairs...")
+
+        try:
+            chain = PerplexityChain(self.llm)
+            result = await chain.ainvoke(sample)
+            score = float(result.get("score", 50.0))
+            reasoning = result.get("reasoning", "No reasoning provided.")
+
+            await self.log_queue.put(f"DISTILLATION_LOG: ✅ Perplexity Score: {score} | {reasoning}")
+            return score
+        except Exception as e:
+            await self.log_queue.put(f"DISTILLATION_LOG: ⚠️ Failed to compute perplexity: {e}")
+            return 0.0
+
+
 
     # ------------------------------------------------------------------
     # EPOCH: MAIN ENTRY POINT
@@ -273,7 +282,11 @@ class DistillationGraph:
         await self._step_seed_and_followup(flat_agents)
 
         # ── Write dataset to file in real-time ──
+        # ── Write dataset to file in real-time ──
         self._write_dataset_to_file()
+
+        # ── Calculate Perplexity (Quality Metric) ──
+        self.last_perplexity = await self._compute_perplexity()
 
         # ── Check budget ──
         await self.log(
@@ -316,10 +329,7 @@ class DistillationGraph:
             await self.log(f"  Agent {agent.id} ({name}): {agent.current_question[:60]}...")
 
     async def _invoke_task_master(self) -> List[str]:
-        if self.debug_mode:
-            questions = [f"Debug Q{i}: {self.anchor_question} — aspect {i}" for i in range(12)]
-            await self.log("DEBUG: Generated 12 mock sub-questions.")
-            return questions
+        # debug_mode check removed to allow MockLLM to run
 
         chain = get_task_master_chain(self.llm)
         try:
@@ -369,30 +379,7 @@ class DistillationGraph:
         - Global anchor question
         - Agent's own sub-question
         """
-        if self.debug_mode:
-            import random
-            await asyncio.sleep(0.1)
-            words = ["epoch", "optimization", "gradient", "descent", "neural",
-                     "flux", "tensor", "backprop", "latent", "space", "entropy",
-                     "manifold", "convergence", "divergence", "resonance"]
-            content = " ".join([random.choice(words) for _ in range(30)])
-            content = f"[DEBUG] {content}"
-
-            agent.history.append({"question": agent.current_question, "answer": content})
-            self.distilled_data.append({
-                "epoch": self.epochs_run,
-                "agent_id": agent.id,
-                "archetype_id": agent.archetype_id,
-                "question": agent.current_question,
-                "answer": content,
-            })
-            self._count_tokens(agent.current_question, content)
-            # Update agent context memory
-            agent.context_memory = self._trim_context_memory(
-                agent.context_memory + f"\n[Epoch {self.epochs_run}] Q: {agent.current_question}\nA: {content}\n"
-            )
-            return content
-
+        
         prompt = f"""<Context>
 Grand Objective / Anchor Question: {self.anchor_question}
 
@@ -414,12 +401,19 @@ Be thorough and analytical.
 </Instruction>"""
 
         try:
+            # Verbose Log: Agent Context & Input
+            await self.log(f"DISTILLATION_LOG: 🤖 [Agent {agent.id}] System Prompt: {agent.system_prompt[:200]}...")
+            await self.log(f"DISTILLATION_LOG: 📥 [Agent {agent.id}] Input Task: {agent.current_question}")
+            
             messages = [
                 SystemMessage(content=agent.system_prompt),
                 HumanMessage(content=prompt),
             ]
             response = await self.llm.ainvoke(messages)
             content = response.content
+
+            # Verbose Log: Agent Output
+            await self.log(f"DISTILLATION_LOG: 📤 [Agent {agent.id}] Raw Output: {content[:300]}... [truncated]")
 
             # Count both input and output tokens
             input_text = agent.system_prompt + prompt
@@ -440,6 +434,7 @@ Be thorough and analytical.
             )
             return content
         except Exception as e:
+            await self.log(f"DISTILLATION_LOG: ❌ Error processing agent {agent.id}: {e}")
             await self.log(f"Error processing agent {agent.id}: {e}")
             return ""
 
@@ -453,8 +448,10 @@ Be thorough and analytical.
         the CURRENT grid (not static archetypes) and spawn a child.
         """
         await self.log("◀ Mirror Descent Pass...")
+        await self.log("DISTILLATION_LOG: 🔍 Starting Mirror Descent Evaluation...")
 
         current_grid_description = self._build_current_grid_description()
+        await self.log(f"DISTILLATION_LOG: 📋 Current Grid Snapshot:\n{current_grid_description}")
 
         for agent in flat_agents:
             if not self.is_running:
@@ -464,7 +461,9 @@ Be thorough and analytical.
                 eval_result = await self._evaluate_agent(agent, current_grid_description)
                 difficulty = eval_result.get("difficulty", "Easy")
                 agent.difficulty_history.append(difficulty)
+                
                 await self.log(f"  Agent {agent.id}: {difficulty}")
+                await self.log(f"DISTILLATION_LOG: ⚖️ Evaluation for {agent.id}: {difficulty}")
 
                 if difficulty == "Hard":
                     await self._handle_hard_agent(agent, eval_result, flat_agents)
@@ -473,6 +472,7 @@ Be thorough and analytical.
                     if agent.inherited_from:
                         agent.solved_parent_question = True
                         await self.log(f"  ✓ Child {agent.id} solved inherited question!")
+                        await self.log(f"DISTILLATION_LOG: ✅ Child {agent.id} SUCCESS - Solved inherited question via {agent.inherited_from}")
                     # Will get a new question in the Seed/Followup step
                     agent.current_question = ""
 
@@ -480,18 +480,7 @@ Be thorough and analytical.
                 await self.log(f"Mirror Descent error for {agent.id}: {e}")
 
     async def _evaluate_agent(self, agent: DistillationAgent, grid_description: str) -> dict:
-        if self.debug_mode:
-            import random
-            difficulty = "Hard" if random.random() > 0.5 else "Easy"
-            if difficulty == "Hard":
-                candidates = [a for a in self._flat_agents() if a.id != agent.id]
-                helper = random.choice(candidates) if candidates else None
-                return {
-                    "difficulty": "Hard",
-                    "best_match_agent_id": helper.id if helper else None,
-                    "reasoning": "Debug mode forced Hard.",
-                }
-            return {"difficulty": "Easy", "reasoning": "Debug mode forced Easy."}
+        # debug_mode check removed to use MockLLM
 
         chain = get_mirror_descent_chain(self.llm)
         input_data = {
@@ -524,15 +513,23 @@ Be thorough and analytical.
             )
         if not helper_agent:
             await self.log(f"  No helper found for {agent.id}, keeping agent.")
+            await self.log(f"DISTILLATION_LOG: ⚠️ No helper found for {agent.id}. Maintaining state.")
             return
 
         await self.log(f"  Spawning child from {agent.id} + {helper_agent.id}")
+        await self.log(f"DISTILLATION_LOG: 🧬 SPAWNING CHILD: {agent.id} (struggling) + {helper_agent.id} (helper)")
 
         mix_result = await self._mix_agents(agent, helper_agent)
 
         # Replace agent in-place: child inherits parent's context memory
         old_context = agent.context_memory
         agent.inherited_from = agent.id + f"_epoch{self.epochs_run}"
+        
+        # Log the evolution
+        old_prompt_snippet = agent.system_prompt[:50]
+        new_prompt_snippet = mix_result.get("new_system_prompt", agent.system_prompt)[:50]
+        await self.log(f"DISTILLATION_LOG: 🔄 Evolution: Prompt morphed from '{old_prompt_snippet}...' to '{new_prompt_snippet}...'")
+        
         agent.system_prompt = mix_result.get("new_system_prompt", agent.system_prompt)
         agent.attributes = mix_result.get("new_attributes", agent.attributes)
         agent.skills = mix_result.get("new_skills", agent.skills)
@@ -542,13 +539,7 @@ Be thorough and analytical.
 
     async def _mix_agents(self, parent_a: DistillationAgent,
                            parent_b: DistillationAgent) -> dict:
-        if self.debug_mode:
-            return {
-                "new_system_prompt": f"Debug Child of {parent_a.id} and {parent_b.id}",
-                "new_attributes": parent_a.attributes[:2] + parent_b.attributes[:2],
-                "new_skills": parent_a.skills[:1] + parent_b.skills[:1],
-            }
-
+        
         chain = get_mixing_chain(self.llm)
         input_data = {
             "parent_a_attributes": ", ".join(parent_a.attributes),
@@ -580,6 +571,8 @@ Be thorough and analytical.
         # Truncate for downstream chains (to avoid blowing context windows)
         if len(self.final_answer) > 40_000:
             self.final_answer = self.final_answer[-40_000:]
+        
+        await self.log(f"DISTILLATION_LOG: 🧩 Synthesized internal final answer ({len(self.final_answer)} chars) for Seed Creator.")
 
     # ------------------------------------------------------------------
     # STEP 5: SEED CREATOR + FOLLOWUP QUESTIONS
@@ -591,11 +584,13 @@ Be thorough and analytical.
         Followup: generate new questions for agents that had it "Easy".
         """
         await self.log("🌱 Seed Creator + Followup Questions...")
+        await self.log("DISTILLATION_LOG: 🌌 Invoking Seed Creator to evolve topics...")
 
         # Generate new topics
         new_topics = await self._invoke_seed_creator()
         self.topics = new_topics
         await self.log(f"  Evolved topics: {new_topics[:3]}{'...' if len(new_topics) > 3 else ''}")
+        await self.log(f"DISTILLATION_LOG: ✨ New Topics: {json.dumps(new_topics)}")
 
         # Identify agents needing new questions
         # Easy agents: current_question was cleared
@@ -608,8 +603,9 @@ Be thorough and analytical.
                 agent.current_question = ""
                 agent.solved_parent_question = False
                 agents_needing_questions.append(agent)
-
+                
         if agents_needing_questions:
+            await self.log(f"DISTILLATION_LOG: 📝 Generating new questions for {len(agents_needing_questions)} agents...")
             new_questions = await self._invoke_followup(len(agents_needing_questions))
             for i, agent in enumerate(agents_needing_questions):
                 if i < len(new_questions):
@@ -619,9 +615,7 @@ Be thorough and analytical.
             await self.log(f"  Assigned {len(agents_needing_questions)} new questions.")
 
     async def _invoke_seed_creator(self) -> List[str]:
-        if self.debug_mode:
-            return [f"Debug Topic {i}" for i in range(12)]
-
+        
         chain = get_seed_creator_chain(self.llm)
         truncated_answer = self.final_answer[:4000]
         input_data = {
@@ -635,11 +629,12 @@ Be thorough and analytical.
             return json.loads(result).get("new_topics", self.topics)
         except Exception as e:
             await self.log(f"Seed Creator error: {e}")
+            await self.log(f"DISTILLATION_LOG: ❌ Seed Creator failed: {e}")
             return self.topics
 
     async def _invoke_followup(self, count: int) -> List[str]:
-        if self.debug_mode:
-            return [f"Debug Followup Q{i}" for i in range(count)]
+
+        # debug_mode check removed to use MockLLM
 
         chain = get_followup_question_chain(self.llm)
         truncated_answer = self.final_answer[:4000]

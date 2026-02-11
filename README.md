@@ -6,10 +6,10 @@ I've been thinking a lot about how we, as people, develop complex ideas and algo
 
 I wanted to see if I could recreate a small-scale version of that "soup" required for true algorithmic insight for local LLMs. The result is this project, **local-deepthink**. It's a system that runs a novel conceptual algorithm called a **Qualitative Neural Network (QNN)**. In a QNN, different AI agents are treated like "neurons" that collaborate and critique each other to refine complex solutions, effectively trading slower response times for higher quality and more robust outputs.
 
-## ⚠️ Alpha Software - We Need Your Help! ⚠️
-Please be aware that local-deepthink is currently in an alpha stage. It is experimental research software. You may encounter bugs, unexpected behavior, or breaking changes.
+## 🚀 Beta Software 🚀
+local-deepthink has moved to the **Beta** stage! While much more stable, it is still research software. You may encounter bugs, but the core loops (Algorithm Design, Brainstorming, Distillation) are functional.
 
-Your feedback is invaluable. If you run into a crash or have ideas, please **open an issue** on our GitHub repository with your graph monitor trace log. Helping us identify and squash bugs is one of the most important contributions you can make right now!
+Your feedback is invaluable. If you run into a crash or have ideas, please **open an issue** on our GitHub repository with your graph monitor trace log.
 
 
 ## **Is true "deep thinking" only for trillion-dollar companies?**

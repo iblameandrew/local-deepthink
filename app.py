@@ -9,6 +9,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
+from langchain_core.messages import AIMessage
 from langgraph.graph import StateGraph, END, START
 from dotenv import load_dotenv
 import json
@@ -278,6 +279,125 @@ class RAPTOR:
     
         return RAPTORRetriever(raptor_index=self)
 
+class DistillationMockLLM(Runnable):
+    """
+    A mock LLM specifically for the Distillation Graph debug mode.
+    It simulates responses for all distillation chains to enable proper token tracking.
+    """
+    def invoke(self, input_data, config: Optional[RunnableConfig] = None, **kwargs):
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+             return asyncio.ensure_future(self.ainvoke(input_data, config=config, **kwargs))
+        else:
+             return asyncio.run(self.ainvoke(input_data, config=config, **kwargs))
+
+    async def ainvoke(self, input_data, config: Optional[RunnableConfig] = None, **kwargs):
+        prompt = str(input_data).lower()
+        # Simulate processing time
+        await asyncio.sleep(0.05)
+
+        # 1. Task Master (Decomposition)
+        if "you are the task master node" in prompt and "break down a complex" in prompt:
+            return AIMessage(content=json.dumps({
+                "sub_questions": [
+                    "What are the fundamental axioms of this topic?",
+                    "How does this topic relate to historical precedents?",
+                    "What are the ethical implications of this technology?",
+                    "Can we analyze this from a systems engineering perspective?",
+                    "What is the economic impact of this phenomenon?",
+                    "How does this influence social dynamics?",
+                    "What are the theoretical limits of this concept?",
+                    "How can we apply this in a practical setting?",
+                    "What are the potential risks and failure modes?",
+                    "How does this interact with emerging trends?",
+                    "What is the psychological impact on the user?",
+                    "What is the long-term sustainability of this approach?"
+                ]
+            }))
+
+        # 2. Seed Creator (New Topics)
+        elif "you are the seed creator agent" in prompt:
+            return AIMessage(content=json.dumps({
+                "new_topics": [
+                    "Advanced Neural Architectures",
+                    "Quantum Computing Interfaces",
+                    "Ethical AI Frameworks",
+                    "Distributed Ledger Systems",
+                    "Cognitive Science Models",
+                    "Biomimetic Engineering",
+                    "Cyber-Physical Systems",
+                    "Sustainable Energy Grids",
+                    "Interstellar Communication",
+                    "Nanotechnology Applications",
+                    "Synthetic Biology",
+                    "Augmented Reality UI"
+                ]
+            }))
+
+        # 3. Followup Questions
+        elif "you are the task master" in prompt and "entering a new epoch" in prompt:
+             return AIMessage(content=json.dumps({
+                "new_questions": [
+                    "Deepen the analysis on the recursive nature of this problem.",
+                    "Investigate the edge cases where this theory breaks down.",
+                    "Propose a unifying framework for these disparate concepts.",
+                    "Critique the current prevailing paradigm.",
+                    "Explore the cross-disciplinary connections.",
+                    "Simulate the long-term evolution of this system."
+                ]
+             }))
+        
+        # 4. Mirror Descent (Evaluation)
+        elif "you are the mirror descent agent" in prompt:
+            # Randomly return Easy or Hard to simulate flux
+            is_hard = random.random() > 0.7 
+            if is_hard:
+                return AIMessage(content=json.dumps({
+                    "difficulty": "Hard",
+                    "reasoning": "The agent's answer was superficial and lacked the required depth for this archetype.",
+                    "best_match_agent_id": None # Logic handles None by finding one, or we could return a mock ID
+                }))
+            else:
+                 return AIMessage(content=json.dumps({
+                    "difficulty": "Easy",
+                    "reasoning": "The agent provided a comprehensive and well-reasoned answer.",
+                    "best_match_agent_id": None
+                }))
+
+        # 5. Mixing Agent (Evolution)
+        elif "you are a mixing agent" in prompt:
+            return AIMessage(content=json.dumps({
+                "new_system_prompt": "You are an Evolved Hybrid Agent. You combine the analytical precision of the Analyst with the creative vision of the Dreamer.",
+                "new_attributes": ["Analytical", "Creative", "Hybrid", "Evolved"],
+                "new_skills": ["Data Analysis", "Creative Writing", "Synthesis"]
+            }))
+
+        # 6. General Agent Processing (The content generation)
+        # This catches the standard agent prompts
+        elif "answer your sub-question deeply" in prompt:
+             # Generate a pseudo-intellectual response to simulate content
+             words = ["synergy", "paradigm", "entropy", "evolution", "cognitive", "framework", "optimization", "recursive", "latent", "manifold"]
+             response = f"This is a mock response generated by the DistillationMockLLM.\n"
+             response += f"The concept of {random.choice(words)} implies a fundamental shift in our understanding.\n"
+             response += f"We must consider the {random.choice(words)} of the system in relation to its environment.\n"
+             response += f"By applying a {random.choice(words)} approach, we can unlock new potentials.\n"
+             response += "Therefore, the answer lies in the intersection of these domains."
+             return AIMessage(content=response)
+
+        # 7. Perplexity Score
+        elif "perplexity score" in prompt:
+             return AIMessage(content=json.dumps({
+                "score": 42.0,
+                "reasoning": "Mock reasoning for perplexity."
+            }))
+
+        # Fallback
+        return AIMessage(content=json.dumps({
+            "error": "DistillationMockLLM: Unrecognized prompt pattern.",
+            "prompt_preview": prompt[:100]
+        }))
+
+
 class CoderMockLLM(Runnable):
     """A mock LLM for debugging that returns instant, pre-canned CODE responses."""
 
@@ -454,6 +574,10 @@ def get_user(user_id: int):
 
 **4. Conclusion:** This design provides a scalable and maintainable foundation for the service. The implementation details demonstrate the final step of the development process.
 """
+
+
+
+
         elif "<updater_instructions>" in prompt:
             return f"""
 
@@ -2639,37 +2763,41 @@ async def start_distillation(payload: dict = Body(...)):
 
     await log_stream.put(f"--- ⚗️ DISTILLATION: Initializing (provider: {provider}, debug: {debug_mode}) ---")
 
-    try:
-        if provider == "gemini":
-            if not api_key:
-                return JSONResponse(content={"message": "Gemini API Key required"}, status_code=400)
-            llm = ChatGoogleGenerativeAI(model="gemini-3-flash-preview", google_api_key=api_key, temperature=0.7)
-            await log_stream.put("--- Distillation LLM: Gemini ---")
-        elif provider == "grok":
-            if not api_key:
-                return JSONResponse(content={"message": "Grok API Key required"}, status_code=400)
-            llm = ChatXAI(model="grok-4-1-fast", xai_api_key=api_key, temperature=0.7)
-            await log_stream.put("--- Distillation LLM: Grok ---")
-        elif provider == "openrouter":
-            if not api_key:
-                return JSONResponse(content={"message": "OpenRouter API Key required"}, status_code=400)
-            openrouter_model = payload.get("openrouter_model", "stepfun/step-3.5-flash:free")
-            llm = ChatOpenAI(
-                model=openrouter_model,
-                openai_api_key=api_key,
-                openai_api_base="https://openrouter.ai/api/v1",
-                temperature=0.7,
-            )
-            await log_stream.put(f"--- Distillation LLM: OpenRouter ({openrouter_model}) ---")
-        elif provider == "llamacpp":
-            llamacpp_url = payload.get("llamacpp_url", "http://localhost:8080/v1/chat/completions")
-            llm = ChatLlamaCpp(server_url=llamacpp_url, temperature=0.7, max_tokens=4096)
-            await log_stream.put(f"--- Distillation LLM: LlamaCpp ({llamacpp_url}) ---")
-        else:
-            return JSONResponse(content={"message": "Invalid provider. Please select gemini, grok, openrouter, or llamacpp."}, status_code=400)
-    except Exception as e:
-        await log_stream.put(f"Distillation LLM Init Error: {e}")
-        return JSONResponse(content={"message": f"Failed to initialize LLM: {e}"}, status_code=500)
+    if debug_mode:
+        llm = DistillationMockLLM()
+        await log_stream.put("--- ⚗️ Distillation Debug Mode: using DistillationMockLLM ---")
+    else:
+        try:
+            if provider == "gemini":
+                if not api_key:
+                    return JSONResponse(content={"message": "Gemini API Key required"}, status_code=400)
+                llm = ChatGoogleGenerativeAI(model="gemini-3-flash-preview", google_api_key=api_key, temperature=0.7)
+                await log_stream.put("--- Distillation LLM: Gemini ---")
+            elif provider == "grok":
+                if not api_key:
+                    return JSONResponse(content={"message": "Grok API Key required"}, status_code=400)
+                llm = ChatXAI(model="grok-4-1-fast", xai_api_key=api_key, temperature=0.7)
+                await log_stream.put("--- Distillation LLM: Grok ---")
+            elif provider == "openrouter":
+                if not api_key:
+                    return JSONResponse(content={"message": "OpenRouter API Key required"}, status_code=400)
+                openrouter_model = payload.get("openrouter_model", "stepfun/step-3.5-flash:free")
+                llm = ChatOpenAI(
+                    model=openrouter_model,
+                    openai_api_key=api_key,
+                    openai_api_base="https://openrouter.ai/api/v1",
+                    temperature=0.7,
+                )
+                await log_stream.put(f"--- Distillation LLM: OpenRouter ({openrouter_model}) ---")
+            elif provider == "llamacpp":
+                llamacpp_url = payload.get("llamacpp_url", "http://localhost:8080/v1/chat/completions")
+                llm = ChatLlamaCpp(server_url=llamacpp_url, temperature=0.7, max_tokens=4096)
+                await log_stream.put(f"--- Distillation LLM: LlamaCpp ({llamacpp_url}) ---")
+            else:
+                return JSONResponse(content={"message": "Invalid provider. Please select gemini, grok, openrouter, or llamacpp."}, status_code=400)
+        except Exception as e:
+            await log_stream.put(f"Distillation LLM Init Error: {e}")
+            return JSONResponse(content={"message": f"Failed to initialize LLM: {e}"}, status_code=500)
 
     active_distillation_graph = DistillationGraph(
         llm=llm,
@@ -2677,6 +2805,7 @@ async def start_distillation(payload: dict = Body(...)):
         anchor_question=anchor_question,
         token_budget=token_budget,
         debug_mode=debug_mode,
+        log_queue=log_stream
     )
 
     asyncio.create_task(run_distillation_loop())
@@ -2706,9 +2835,9 @@ async def run_distillation_loop():
                 "input_tokens": active_distillation_graph.total_input_tokens,
                 "output_tokens": active_distillation_graph.total_output_tokens,
                 "token_budget": active_distillation_graph.token_budget,
-                "perplexity": active_distillation_graph._compute_perplexity_heuristic(),
                 "qa_pairs_count": len(active_distillation_graph.distilled_data),
                 "dataset_file": active_distillation_graph.dataset_path,
+                "perplexity": active_distillation_graph.last_perplexity,
             }
             await log_stream.put(json.dumps(data))
 

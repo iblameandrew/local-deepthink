@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Free Deep Think</title>
     <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
-    <script src="js/chart.js"></script>
+
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <link rel="stylesheet" href="css/prism-okaidia.min.css">
     <link rel="stylesheet" href="css/prism-toolbar.min.css">
@@ -915,6 +915,7 @@
         </div>
     </div>
 
+    <script src="js/chart.js"></script>
     <script src="js/components/node-chat.js"></script>
     <script>
         const graphParamsForm = document.getElementById('graph-params-form');
@@ -1019,6 +1020,12 @@
                     }
                 }
             });
+        };
+
+        const updatePerplexityChart = (epoch, perplexity) => {
+            allLbelsData.push(epoch);
+            allPerplexityValues.push(perplexity);
+            renderPerplexityChart();
         };
 
         // --- Distillation Mode Variables ---
@@ -1933,13 +1940,34 @@
         eventSource.onmessage = function (event) {
             const rawMessage = event.data;
 
-            if (rawMessage.includes('epoch') && rawMessage.includes('perplexity')) {
-
-                data = parseJsonFromDataString(rawMessage);
-                addLogMessage(`>>> Perplexity data received for epoch ${data.epoch}: ${data.perplexity.toFixed(2)}`, { color: 'cyan' });
-                allPerplexityValues.push(parseFloat(data.perplexity));
-                allLbelsData.push(data.epoch);
-                renderPerplexityChart();
+            if ((rawMessage.includes('"type":') || rawMessage.startsWith('{')) && (rawMessage.includes('distillation_update') || rawMessage.includes('distillation_complete'))) {
+                try {
+                    const jsonStr = rawMessage.substring(rawMessage.indexOf('{')).trim();
+                    const data = JSON.parse(jsonStr);
+                    if (data.type === 'distillation_update') {
+                        renderAsciiTopology(data.topology, data.epoch);
+                        updateDistilMetrics(data);
+                        if (data.perplexity !== undefined && typeof updatePerplexityChart === 'function') {
+                            updatePerplexityChart(data.epoch, data.perplexity);
+                        }
+                        appendDistilConsole(`[Epoch ${data.epoch}] Tokens: ${(data.token_count || 0).toLocaleString()} / ${(data.token_budget || 0).toLocaleString()} | QA: ${data.qa_pairs_count || 0}`, '#0ff');
+                    }
+                    if (data.type === 'distillation_complete') {
+                        appendDistilConsole(`✓ COMPLETE — Epochs: ${data.total_epochs}, Tokens: ${(data.total_tokens || 0).toLocaleString()}, QA Pairs: ${data.qa_pairs_count}`, '#0f0');
+                        // Reset distillation buttons if they are in scope
+                        const distilStartBtn = document.getElementById('distillation-run-button');
+                        const distilStopBtn = document.getElementById('distillation-stop-button');
+                        const distilDownloadBtn = document.getElementById('download-distillation-btn');
+                        if (distilStartBtn) {
+                            distilStartBtn.disabled = false;
+                            distilStartBtn.textContent = "Start Distillation";
+                        }
+                        if (distilStopBtn) distilStopBtn.style.display = 'none';
+                        if (distilDownloadBtn) distilDownloadBtn.style.display = '';
+                    }
+                } catch (e) {
+                    console.error("Error parsing distillation update", e);
+                }
 
             } else if (rawMessage.includes('TOKEN_USAGE:')) {
                 try {
@@ -2064,7 +2092,7 @@
                         if (data.perplexity !== undefined && typeof updatePerplexityChart === 'function') {
                             updatePerplexityChart(data.epoch, data.perplexity);
                         }
-                        appendDistilConsole(`[Epoch ${data.epoch}] Tokens: ${(data.token_count || 0).toLocaleString()} / ${(data.token_budget || 0).toLocaleString()} | Perplexity: ${(data.perplexity || 0).toFixed(1)} | QA: ${data.qa_pairs_count || 0}`, '#0ff');
+                        appendDistilConsole(`[Epoch ${data.epoch}] Tokens: ${(data.token_count || 0).toLocaleString()} / ${(data.token_budget || 0).toLocaleString()} | QA: ${data.qa_pairs_count || 0}`, '#0ff');
                     }
                     if (data.type === 'distillation_complete') {
                         appendDistilConsole(`✓ COMPLETE — Epochs: ${data.total_epochs}, Tokens: ${(data.total_tokens || 0).toLocaleString()}, QA Pairs: ${data.qa_pairs_count}`, '#0f0');
