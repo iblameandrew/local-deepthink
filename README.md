@@ -161,7 +161,7 @@ The current focus is on polishing and debugging existing features to reach a bet
 
 ## Technical Setup
 
-*   **Backend**: FastAPI, LangChain, LangGraph, Ollama
+*   **Backend**: FastAPI, LangChain, LangGraph, LlamaCpp (via server), OpenRouter
 *   **Frontend**: HTML, CSS, JavaScript
 
 ### Installation and Execution
@@ -180,20 +180,15 @@ The current focus is on polishing and debugging existing features to reach a bet
     source venv/bin/activate
     ```
 3.  **Install dependencies:** `pip install -r requirements.txt`.
-4.  **Install and Run Ollama**:
-    *   Follow the official instructions to install Ollama.
-    *   Download a primary model for the agents (default is `dengcao/Qwen3-3B-A3B-Instruct-2507:latest`).
-        ```bash
-        ollama pull dengcao/Qwen3-3B-A3B-Instruct-2507:latest
-        ```
-    *   **Download the compulsory summarization model.** local-deepthink requires `qwen3:1.7b` for its internal processes.
-        ```bash
-        ollama pull qwen3:1.7b
-        ```
-    *   Ensure the Ollama application is running.
+4.  **Setup LLM Provider**:
+    *   **OpenRouter**: Sign up at [OpenRouter](https://openrouter.ai/) and get an API key. This is the easiest way to get started with powerful models like Claude 3.5 Sonnet or Gemini Pro.
+    *   **LlamaCpp Server (Local)**:
+        *   Install the server: `pip install llama-cpp-python[server]`
+        *   Download a GGUF model (e.g., from HuggingFace).
+        *   Run the server: `python -m llama_cpp.server --model path/to/model.gguf`
+    
 5.  **Run the application:**
     ```bash
-
     launch.bat
     ```
     *   Or manually: `python app.py` (Note: `launch.bat` handles git sync and dependencies automatically).
