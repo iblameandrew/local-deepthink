@@ -71,13 +71,13 @@ DISTILLATION_ARCHETYPES = {
 
 def get_task_master_chain(llm):
     """
-    Decomposes the anchor question into 12 distinct sub-questions based on the current topics.
+    Decomposes the anchor question into 12 distinct sub-questions using a Socratic inquiry approach.
     """
     prompt = ChatPromptTemplate.from_template("""
 <System>
-You are the Task Master Node of a Knowledge Distillation Network.
-Your goal is to break down a complex "Anchor Question" into 12 distinct, analytical sub-questions.
-These sub-questions will be assigned to a network of 12 specialized agents to explore the topic depth.
+You are the Socratic Task Master of a Knowledge Distillation Network.
+Your goal is to orchestrate a logical, depth-first inquiry into a complex "Anchor Question".
+Instead of a simple breakdown, you create a structured path of discovery—a ladder of understanding that bridges current knowledge with the ultimate objective.
 </System>
 
 <Context>
@@ -86,20 +86,21 @@ Anchor Question: "{anchor_question}"
 </Context>
 
 <Instruction>
-Analyze the anchor question in the context of the provided topics.
-Generate exactly 12 unique sub-questions.
-Each sub-question should focus on a different aspect or angle of the main problem (e.g., historical, technical, ethical, practical, theoretical, etc.).
-Try to ensure the questions cover a broad spectrum of the topics.
+1. Design a Socratic sequence of 12 sub-questions.
+2. The sequence should start with foundational concepts (the "first principles") related to the topics and gradually build in complexity toward the Anchor Question.
+3. Each question should feel like a logical next step from the one before it, fostering a smooth flow of understanding.
+4. Ensure the 12 questions collectively cover the breadth of the current topics while maintaining a tight focus on the Anchor's core mystery.
+5. Avoid disconnected queries; aim for a dialectic progression where each answer provides a rung for the next question.
 </Instruction>
 
 <OutputFormat>
 Return a JSON object with a single key "sub_questions" containing a list of 12 strings.
-Example:
 {{
   "sub_questions": [
-    "What is the historical context of...?",
-    "How does X affect Y in terms of...?",
+    "Question 1 (Foundational)...",
+    "Question 2 (Building on 1)...",
     ...
+    "Question 12 (Converging on Anchor)..."
   ]
 }}
 </OutputFormat>
@@ -108,14 +109,13 @@ Example:
 
 def get_seed_creator_chain(llm):
     """
-    Generates new ontologically close topics based on the final answer and current topics.
+    Generates new topics using conceptual bridging (dialectic synthesis).
     """
     prompt = ChatPromptTemplate.from_template("""
 <System>
-You are the Seed Creator Agent.
-Your role is to evolve the knowledge graph by identifying new areas of exploration.
-You analyze the "Final Answer" from the previous epoch and the "Current Topics".
-You must generate 12 NEW topics that are ontologically close to the current ones but represent a step forward or a deepening of the inquiry.
+You are the Seed Creator (The Dialectic Synthesizer).
+Your role is to evolve the knowledge graph by bridging current insights with adjacent or deeper territories.
+You ensure the transition between research epochs is not a leap, but a smooth conceptual bridge that maintains the thread of understanding.
 </System>
 
 <Input>
@@ -124,9 +124,10 @@ Final Network Answer: "{final_answer}"
 </Input>
 
 <Instruction>
-Based on the insights in the final answer, what are the next logical areas to explore?
-Generate 12 short, descriptive topic names (1-3 words each).
-They should be related but distinct from the current topics.
+1. Analyze the "Final Answer" for subtle clues, unanswered tensions, or "diagonal" connections to new fields.
+2. Generate 12 new topic seeds (1-3 words each).
+3. These seeds must serve as a conceptual bridge: 50% should deepen the current inquiry, 25% should synthesize existing tensions, and 25% should pivot toward an ontologically adjacent field.
+4. Avoid abrupt shifts. If the current topic is "Neuroscience", don't jump to "Astronomy" unless you find a bridge like "Stellar Neural Networks" or "Circadian Rhythms".
 </Instruction>
 
 <OutputFormat>
@@ -222,14 +223,13 @@ Return a JSON object:
 
 def get_followup_question_chain(llm):
     """
-    Generates followup questions for the next epoch.
+    Generates followup questions using a Socratic/Bridging flow.
     """
     prompt = ChatPromptTemplate.from_template("""
 <System>
-You are the Task Master.
-We are entering a new Epoch of research.
-Based on the previous "Final Answer" and the "New Topics", generate a new set of questions.
-These questions will be assigned to agents who found the previous round "Easy".
+You are the Socratic Task Master.
+We are deepening our inquiry in a new Epoch.
+Your role is to bridge the understanding established in the "Previous Final Answer" with the "New Topics" to generate questions that push the boundary with grace and logic.
 </System>
 
 <Input>
@@ -238,7 +238,10 @@ Previous Final Answer: "{final_answer}"
 </Input>
 
 <Instruction>
-Generate exactly {num_questions} new, intriguing questions that push the research boundary further.
+1. We must generate exactly {num_questions} new questions.
+2. These questions should not be random; they must feel like the "next questions" a curious mind would ask after hearing the Previous Final Answer.
+3. Use the New Topics as context to tilt the inquiry into the next logical dimension.
+4. Maintain a Socratic tone: inquiry that reveals more than it assumes.
 </Instruction>
 
 <OutputFormat>
