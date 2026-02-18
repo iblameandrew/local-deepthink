@@ -2429,9 +2429,13 @@ async def build_and_run_graph(payload: dict = Body(...)):
 
         elif provider == "llamacpp":
             llamacpp_url = params.get("llamacpp_url", "http://localhost:8080/v1")
+            # Normalize URL - remove /chat/completions and trailing slashes
             llamacpp_url = llamacpp_url.rstrip("/")
-            if "/chat/completions" in llamacpp_url:
-                llamacpp_url = llamacpp_url.replace("/chat/completions", "")
+            llamacpp_url = llamacpp_url.replace("/chat/completions", "")
+            llamacpp_url = llamacpp_url.rstrip("/")
+            # Ensure /v1 suffix
+            if not llamacpp_url.endswith("/v1"):
+                llamacpp_url = llamacpp_url + "/v1"
             llamacpp_api_key = "no-key-required"
             llm = ChatLlamaCpp(
                 base_url=llamacpp_url,
@@ -2445,7 +2449,9 @@ async def build_and_run_graph(payload: dict = Body(...)):
                 "llamacpp_embedding_url", "http://localhost:8080/v1"
             )
             llamacpp_emb_url = llamacpp_emb_url.rstrip("/")
-            if "/v1" not in llamacpp_emb_url:
+            llamacpp_emb_url = llamacpp_emb_url.replace("/chat/completions", "")
+            llamacpp_emb_url = llamacpp_emb_url.rstrip("/")
+            if not llamacpp_emb_url.endswith("/v1"):
                 llamacpp_emb_url = llamacpp_emb_url + "/v1"
             try:
                 embeddings_model = OpenAIEmbeddings(
@@ -2601,6 +2607,11 @@ async def build_and_run_graph(payload: dict = Body(...)):
                         params["num_epochs"] = 2
                     else:
                         params["num_epochs"] = int(params["num_epochs"])
+
+                    if complexity_data is None:
+                        raise ValueError(
+                            "Failed to parse complexity estimation response"
+                        )
 
                     cot_trace_depth = int(complexity_data.get("recommended_layers", 2))
                     width = int(complexity_data.get("recommended_width", 3))
