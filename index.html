@@ -1499,7 +1499,10 @@
         }
 
         // Handle provider change
-        llmProviderSelect.addEventListener('change', updateProviderConfig);
+        llmProviderSelect.addEventListener('change', () => {
+            updateProviderConfig();
+            localStorage.setItem('llm_provider', llmProviderSelect.value);
+        });
 
         // Save all settings to localStorage
         saveApiKeyBtn.addEventListener('click', () => {
