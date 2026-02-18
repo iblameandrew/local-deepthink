@@ -626,8 +626,11 @@
 
             <div id="llamacpp-config" style="display: none; gap: 0.5rem; align-items: center;">
                 <label for="llamacpp-url">🔗 Server URL:</label>
-                <input type="text" id="llamacpp-url" value="http://localhost:8080/v1/chat/completions"
-                    placeholder="http://localhost:8080/v1/chat/completions" style="min-width: 320px;">
+                <input type="text" id="llamacpp-url" value="http://localhost:8080/v1"
+                    placeholder="http://localhost:8080/v1" style="min-width: 320px;">
+                <label for="llamacpp-api-key">🔑 API Key:</label>
+                <input type="password" id="llamacpp-api-key" value="no-key-required"
+                    placeholder="no-key-required" style="min-width: 150px;">
                 <label for="llamacpp-embedding-url">🧠 Embedding URL:</label>
                 <input type="text" id="llamacpp-embedding-url" value="http://localhost:8080/v1"
                     placeholder="http://localhost:8080/v1" style="min-width: 320px;">
@@ -1181,6 +1184,7 @@
                 const openrouterKey = document.getElementById('openrouter-api-key').value.trim();
                 const openrouterMdl = document.getElementById('openrouter-model').value.trim();
                 const llamacppServerUrl = document.getElementById('llamacpp-url').value.trim();
+                const llamacppApiKey = document.getElementById('llamacpp-api-key').value.trim();
 
                 let api_key = '';
                 if (provider === 'gemini') api_key = geminiKey;
@@ -1211,7 +1215,8 @@
                             provider: provider,
                             api_key: api_key,
                             openrouter_model: openrouterMdl,
-                            llamacpp_url: llamacppServerUrl
+                            llamacpp_url: llamacppServerUrl,
+                            llamacpp_api_key: llamacppApiKey
                         })
                     });
 
@@ -1513,6 +1518,7 @@
             const openrouterApiKey = document.getElementById('openrouter-api-key').value.trim();
             const openrouterModel = document.getElementById('openrouter-model').value.trim();
             const llamacppUrl = document.getElementById('llamacpp-url').value.trim();
+            const llamacppApiKey = document.getElementById('llamacpp-api-key').value.trim();
             const llamacppEmbeddingUrl = document.getElementById('llamacpp-embedding-url').value.trim();
 
 
@@ -1523,6 +1529,7 @@
             if (openrouterApiKey) localStorage.setItem('openrouter_api_key', openrouterApiKey);
             if (openrouterModel) localStorage.setItem('openrouter_model', openrouterModel);
             if (llamacppUrl) localStorage.setItem('llamacpp_url', llamacppUrl);
+            if (llamacppApiKey) localStorage.setItem('llamacpp_api_key', llamacppApiKey);
             if (llamacppEmbeddingUrl) localStorage.setItem('llamacpp_embedding_url', llamacppEmbeddingUrl);
 
 
@@ -1570,7 +1577,8 @@
                     const grokApiKey = localStorage.getItem('grok_api_key');
                     const openrouterApiKey = localStorage.getItem('openrouter_api_key');
                     const openrouterModel = localStorage.getItem('openrouter_model') || 'stepfun/step-3.5-flash:free';
-                    const llamacppUrl = localStorage.getItem('llamacpp_url') || 'http://localhost:8080/v1/chat/completions';
+                    const llamacppUrl = localStorage.getItem('llamacpp_url') || 'http://localhost:8080/v1';
+                    const llamacppApiKey = localStorage.getItem('llamacpp_api_key') || 'no-key-required';
                     const llamacppEmbeddingUrl = localStorage.getItem('llamacpp_embedding_url') || 'http://localhost:8080/v1';
 
 
@@ -1614,6 +1622,7 @@
 
                         openrouter_model: openrouterModel,
                         llamacpp_url: llamacppUrl,
+                        llamacpp_api_key: llamacppApiKey,
                         llamacpp_embedding_url: llamacppEmbeddingUrl,
                         vector_word_size: 2,
                         prompt_alignment: 1.0,
@@ -1864,6 +1873,7 @@
             const openrouterKey = document.getElementById('openrouter-api-key').value.trim();
             const openrouterMdl = document.getElementById('openrouter-model').value.trim();
             const llamacppServerUrl = document.getElementById('llamacpp-url').value.trim();
+            const llamacppApiKey = document.getElementById('llamacpp-api-key').value.trim();
             const llamacppEmbUrl = document.getElementById('llamacpp-embedding-url').value.trim();
 
 
@@ -1879,6 +1889,7 @@
 
             params.openrouter_model = openrouterMdl;
             params.llamacpp_url = llamacppServerUrl;
+            params.llamacpp_api_key = llamacppApiKey;
             params.llamacpp_embedding_url = llamacppEmbUrl;
 
             runGraph({ params, mode: 'algorithm' }, '/build_and_run_graph');
