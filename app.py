@@ -2429,7 +2429,10 @@ async def build_and_run_graph(payload: dict = Body(...)):
 
         elif provider == "llamacpp":
             llamacpp_url = params.get("llamacpp_url", "http://localhost:8080/v1")
-            llamacpp_api_key = params.get("llamacpp_api_key", "no-key-required")
+            llamacpp_url = llamacpp_url.rstrip("/")
+            if "/chat/completions" in llamacpp_url:
+                llamacpp_url = llamacpp_url.replace("/chat/completions", "")
+            llamacpp_api_key = "no-key-required"
             llm = ChatLlamaCpp(
                 base_url=llamacpp_url,
                 api_key=llamacpp_api_key,
@@ -2440,7 +2443,10 @@ async def build_and_run_graph(payload: dict = Body(...)):
             # Use OpenAIEmbeddings pointing to local server
             llamacpp_emb_url = params.get(
                 "llamacpp_embedding_url", "http://localhost:8080/v1"
-            )  # Expecting base URL
+            )
+            llamacpp_emb_url = llamacpp_emb_url.rstrip("/")
+            if "/v1" not in llamacpp_emb_url:
+                llamacpp_emb_url = llamacpp_emb_url + "/v1"
             try:
                 embeddings_model = OpenAIEmbeddings(
                     model="text-embedding-nomic-embed-text-v1.5",  # Arbitrary model name for local server
@@ -3452,12 +3458,18 @@ async def start_distillation(payload: dict = Body(...)):
                 )
             elif provider == "llamacpp":
                 llamacpp_url = payload.get("llamacpp_url", "http://localhost:8080/v1")
-                llamacpp_api_key = payload.get("llamacpp_api_key", "no-key-required")
+                llamacpp_url = llamacpp_url.rstrip("/")
+                if "/chat/completions" in llamacpp_url:
+                    llamacpp_url = llamacpp_url.replace("/chat/completions", "")
+                llamacpp_api_key = "no-key-required"
                 llm = ChatLlamaCpp(
                     base_url=llamacpp_url,
                     api_key=llamacpp_api_key,
                     temperature=0.7,
                     max_tokens=4096,
+                )
+                await log_stream.put(
+                    f"--- Distillation LLM: LlamaCpp ({llamacpp_url}) ---"
                 )
                 await log_stream.put(
                     f"--- Distillation LLM: LlamaCpp ({llamacpp_url}) ---"
