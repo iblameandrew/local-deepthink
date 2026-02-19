@@ -1623,7 +1623,7 @@
                         prompt_alignment: 1.0,
                         density: 1.0,
                         learning_rate: 0.1,
-                        num_epochs: document.getElementById('brainstorm_epochs').value || 2,
+                        num_epochs: parseInt(document.getElementById('brainstorm_epochs')?.value) || 2,
                         coder_debug_mode: document.getElementById('brainstorm_debug_mode').checked ? 'true' : 'false'
                     };
 
